@@ -1,0 +1,6 @@
+{
+  "name": "Yorkshire Three Peaks Tracker",
+  "description": "A playful, cartoon-style web application to track walking progress, view live coordinates, register photo uploads, and follow leaderboard rankings for the Yorkshire Three Peaks walk.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
