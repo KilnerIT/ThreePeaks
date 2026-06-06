@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { FormEvent, DragEvent, ChangeEvent, RefObject } from "react";
+import React, { useState, FormEvent, DragEvent, ChangeEvent, RefObject } from "react";
 import { Sparkles, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { LiveUpdate } from "../types";
@@ -43,6 +43,8 @@ export default function MessagingPlatform({
   fileInputRef,
   processImageFile
 }: MessagingPlatformProps) {
+
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Drag and Drop support
   const handleDrag = (e: DragEvent) => {
@@ -137,8 +139,15 @@ export default function MessagingPlatform({
                   )}
 
                   {post.image && (
-                    <div className="mt-1.5 overflow-hidden rounded-lg border border-slate-150 shadow-inner max-h-[120px] bg-slate-50 relative flex items-center justify-center">
+                    <div 
+                      onClick={() => setPreviewImage(post.image || null)}
+                      className="mt-1.5 overflow-hidden rounded-lg border border-slate-150 shadow-inner max-h-[120px] bg-slate-50 relative flex items-center justify-center cursor-zoom-in hover:scale-[1.01] hover:opacity-95 transition-all group duration-200"
+                      title="Click to view full screen"
+                    >
                       <img src={post.image} alt="Walk Snapshot" className="w-full object-cover max-h-[120px]" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-white text-[9px] font-black uppercase tracking-wider bg-black/60 px-2 py-1 rounded-md">🔍 Zoom Photo</span>
+                      </div>
                     </div>
                   )}
                 </motion.div>
@@ -167,7 +176,7 @@ export default function MessagingPlatform({
               className="w-full text-[10px] font-bold text-slate-750 bg-white border border-slate-200 rounded-lg p-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-orange-400 cursor-pointer"
             >
               <option value="Nick">Nick 🏃‍♂️</option>
-              <option value="Gurce">Gurce 🏃‍♂️</option>
+              <option value="Gurch">Gurch 🏃‍♂️</option>
               <option value="Wayne">Wayne 🥾</option>
               <option value="Louise">Louise 🏃‍♀️</option>
               <option value="Kira">Kira 🎒</option>
@@ -229,6 +238,40 @@ export default function MessagingPlatform({
           </button>
         </div>
       </form>
+
+      {/* FULL SCREEN PHOTO OVERLAY */}
+      <AnimatePresence>
+        {previewImage && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[9999] flex flex-col items-center justify-center p-4 cursor-pointer"
+            onClick={() => setPreviewImage(null)}
+          >
+            <div className="absolute top-4 right-4 text-white hover:text-orange-400 text-sm font-black bg-white/10 hover:bg-white/20 w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer">
+              ✕
+            </div>
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="relative max-w-full max-h-[85vh] flex flex-col items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img 
+                src={previewImage} 
+                alt="Full size view" 
+                className="max-w-full max-h-[80vh] object-contain rounded-2xl border-4 border-white/20 shadow-2xl"
+                referrerPolicy="no-referrer"
+              />
+              <p className="text-white/60 text-[10px] font-bold uppercase tracking-wider mt-4 font-mono select-none">
+                ☀️ Click anywhere outside to close zoom view
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

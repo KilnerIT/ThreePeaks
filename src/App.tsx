@@ -537,29 +537,89 @@ export default function App() {
             <div className="absolute inset-0 bg-gradient-to-b from-sky-400 to-sky-200 pointer-events-none rounded-[1.85rem] z-0" />
 
             {/* Dynamic sun shining brightly */}
-            <div className="absolute top-6 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-[10%] w-20 h-20 bg-amber-300/40 rounded-full blur-xs border-4 border-amber-400 pointer-events-none opacity-80 z-0" />
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-[10%] w-20 h-20 bg-amber-300/40 rounded-full blur-xs border-4 border-amber-400 pointer-events-none opacity-80 z-0" />
+
+            {/* Cute Cartoon Decorative Clouds for Depth */}
+            <div className="absolute top-16 left-[15%] text-4xl select-none pointer-events-none opacity-40 animate-pulse duration-[5000ms] z-0">☁️</div>
+            <div className="absolute top-12 left-[48%] text-2xl select-none pointer-events-none opacity-30 animate-bounce-slow z-0">☁️</div>
+            <div className="absolute top-20 right-[15%] text-3xl select-none pointer-events-none opacity-50 z-0 select-none">☁️</div>
+
+            {/* Prominent Floating Swipe Left and Right Prompts & Map Header Badges */}
+            <div className="absolute top-4 left-4 right-4 flex flex-wrap gap-2 items-center justify-between pointer-events-none z-30">
+              <div className="bg-emerald-900/85 backdrop-blur-md text-emerald-100 border border-emerald-600/30 px-3.5 py-1.5 rounded-2xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider shadow-lg">
+                <span className="text-sm">🧭</span> Horton 3 Peaks Route Tracker
+              </div>
+              <div className="bg-amber-400 text-slate-900 border-2 border-slate-900 font-black px-3.5 py-1.5 rounded-2xl flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider shadow-lg animate-pulse">
+                <span className="text-xs">↔️</span> Scroll Left & Right to explore full trail
+              </div>
+            </div>
 
             {/* HORIZONTALLY SCROLLABLE WRAPPER FOR TRAIL - SCROLLS PRECISELY ON MOBILE & TABLETS */}
             <div className="w-full overflow-x-auto relative z-10 pb-4 pt-16 scrollbar-thin scrollbar-thumb-emerald-700/50 scrollbar-track-transparent">
               <div className="relative w-full min-w-[850px] h-[240px]">
-                {/* PROPORTIONAL TRAIL PROFILE (Linear Custom Terrain Mapping) */}
+                {/* PROPORTIONAL TRAIL PROFILE (Linear Custom Terrain Mapping with Multiple Enhancements) */}
                 <div className="absolute bottom-8 left-[5%] right-[5%] h-[120px] z-10 pointer-events-none">
                   <svg className="w-full h-full overflow-visible animate-fade-in" viewBox="0 0 1000 120" preserveAspectRatio="none">
                     <defs>
                       <linearGradient id="terrainFillGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#4ADE80" stopOpacity="0.9" /> {/* Rich Green peaks */}
-                        <stop offset="50%" stopColor="#22C55E" stopOpacity="0.75" />
+                        <stop offset="50%" stopColor="#22C55E" stopOpacity="0.8" />
                         <stop offset="100%" stopColor="#78350F" stopOpacity="0.95" /> {/* Clay / Grass core */}
                       </linearGradient>
+                      
+                      {/* Secondary parallax ridge gradient */}
+                      <linearGradient id="bgRidgeGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#A7F3D0" stopOpacity="0.45" />
+                        <stop offset="100%" stopColor="#047857" stopOpacity="0.1" />
+                      </linearGradient>
+
+                      {/* Stroke difficulty slope color code (Green = Valleys, Orange = Ascents, Red = Crux peaks) */}
+                      <linearGradient id="trailStrokeGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="#10B981" /> {/* Horton Start (valley) */}
+                        <stop offset="13%" stopColor="#EF4444" /> {/* Pen-y-ghent Summit (Peak 1) */}
+                        <stop offset="25%" stopColor="#34D399" />
+                        <stop offset="48%" stopColor="#10B981" /> {/* Ribblehead (valley) */}
+                        <stop offset="65%" stopColor="#EA580C" /> {/* Whernside Peak (Peak 2) */}
+                        <stop offset="75%" stopColor="#34D399" />
+                        <stop offset="86%" stopColor="#EF4444" /> {/* Ingleborough (Peak 3) */}
+                        <stop offset="95%" stopColor="#10B981" /> {/* Horton Finish */}
+                      </linearGradient>
                     </defs>
-                    {/* Filled green mountain polygon area */}
+
+                    {/* Subtle Topographical Elevation Grid Lines */}
+                    <line x1="0" y1="120" x2="1000" y2="120" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" opacity="0.2" />
+                    <line x1="0" y1="85" x2="1000" y2="85" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" opacity="0.15" />
+                    <line x1="0" y1="50" x2="1000" y2="50" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" opacity="0.15" />
+                    <line x1="0" y1="15" x2="1000" y2="15" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" opacity="0.2" />
+
+                    {/* Alitude Grid Text Scales */}
+                    <text x="5" y="115" fill="#047857" fontSize="7" fontFamily="monospace" opacity="0.6">ALT: 250m (Horton Base)</text>
+                    <text x="5" y="80" fill="#047857" fontSize="7" fontFamily="monospace" opacity="0.6">ALT: 450m (Ribble Valley)</text>
+                    <text x="5" y="45" fill="#047857" fontSize="7" fontFamily="monospace" opacity="0.6">ALT: 600m (Crux Ascents)</text>
+                    <text x="5" y="12" fill="#047857" fontSize="7" fontFamily="monospace" opacity="0.7" fontWeight="bold">ALT: 750m (Summits Peak)</text>
+
+                    {/* BACKGROUND PARALLAX MOUNTAIN SILHOUETTE HILLS LAYER */}
+                    <path
+                      d={`M 0 120 L 0 ${(120 - (250/750)*100).toFixed(1)} ${
+                        ELEVATION_PROFILE.map(p => {
+                          const x = (p.miles / 24.0) * 1000 - 18; // offset X slightly left
+                          const y = 120 - (p.alt / 750) * 92;      // scaled down slightly for distance background look
+                          return `L ${x.toFixed(1)} ${y.toFixed(1)}`;
+                        }).join(" ")
+                      } L 1000 120 Z`}
+                      fill="url(#bgRidgeGrad)"
+                    />
+
+                    {/* Filled green main foreground mountain polygon area */}
                     <path
                       d={`M 0 120 L 0 ${(120 - (250/750)*100).toFixed(1)} ${
                         ELEVATION_PROFILE.map(p => `L ${(p.miles / 24.0) * 1000} ${(120 - (p.alt / 750) * 105).toFixed(1)}`).join(" ")
                       } L 1000 120 Z`}
                       fill="url(#terrainFillGrad)"
                     />
-                    {/* Solid trail ridge outline */}
+
+                    {/* Multi-layered High-Finish Trail Profile Lines */}
+                    {/* 1. Underlying dark grass border structure */}
                     <path
                       d={ELEVATION_PROFILE.map((p, idx) => {
                         const x = (p.miles / 24.0) * 1000;
@@ -567,10 +627,39 @@ export default function App() {
                         return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
                       }).join(" ")}
                       fill="none"
-                      stroke="#15803D"
-                      strokeWidth="6"
+                      stroke="#064E3B"
+                      strokeWidth="9"
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                    />
+
+                    {/* 2. Color graded difficulty trail path line */}
+                    <path
+                      d={ELEVATION_PROFILE.map((p, idx) => {
+                        const x = (p.miles / 24.0) * 1000;
+                        const y = 120 - (p.alt / 750) * 105;
+                        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+                      }).join(" ")}
+                      fill="none"
+                      stroke="url(#trailStrokeGrad)"
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+
+                    {/* 3. High-contrast core inner trace line to highlight path of ascent */}
+                    <path
+                      d={ELEVATION_PROFILE.map((p, idx) => {
+                        const x = (p.miles / 24.0) * 1000;
+                        const y = 120 - (p.alt / 750) * 105;
+                        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+                      }).join(" ")}
+                      fill="none"
+                      stroke="#FFFFFF"
+                      strokeWidth="1.2"
+                      strokeDasharray="4 3"
+                      strokeLinecap="round"
+                      opacity="0.85"
                     />
                   </svg>
                 </div>
@@ -591,10 +680,10 @@ export default function App() {
                         }}
                       >
                         {/* Dashed vertical height measure standard indicator */}
-                        <div className="w-0.5 h-10 bg-emerald-800/20 border-l-2 border-dashed border-emerald-950/30 mb-1" />
+                        <div className="w-0.5 h-10 bg-emerald-800/25 border-l-2 border-dashed border-emerald-950/35 mb-1" />
                         
                         {/* Visual bubble container */}
-                        <div className="flex flex-col items-center bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-amber-400 shadow-md pointer-events-auto transform -translate-x-1/2 hover:scale-105 transition-all">
+                        <div className="flex flex-col items-center bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-xl border-2 border-emerald-600 shadow-md pointer-events-auto transform -translate-x-1/2 hover:scale-105 transition-all">
                           <span className="text-base select-none">{landmark.emoji}</span>
                           <span className="text-[9px] font-black tracking-normal text-slate-800 mt-0.5 leading-tight">
                             {landmark.name}
@@ -624,11 +713,11 @@ export default function App() {
                       }}
                     >
                       {/* Floating Squad Badge stats */}
-                      <div className="bg-white/95 border border-emerald-600 px-2 py-1 rounded-xl shadow-lg text-center mb-1 flex flex-col items-center gap-0.5 animate-bounce-slow shrink-0 pointer-events-auto">
-                        <span className="text-emerald-700 text-[8.5px] font-black uppercase tracking-wider flex items-center gap-0.5 leading-none">
+                      <div className="bg-white/95 border-2 border-orange-500 px-2 py-1 rounded-xl shadow-lg text-center mb-1 flex flex-col items-center gap-0.5 animate-bounce-slow shrink-0 pointer-events-auto">
+                        <span className="text-orange-600 text-[8.5px] font-black uppercase tracking-wider flex items-center gap-0.5 leading-none">
                           🏞️ SQUAD ON TRAIL
                         </span>
-                        <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1 py-0.5 rounded font-black font-mono">
+                        <span className="bg-orange-100 text-orange-900 text-[8px] px-1 py-0.5 rounded font-black font-mono">
                           {totalMiles.toFixed(2)} mi ({progressPercent}%)
                         </span>
                         <span className="text-[7.5px] font-black text-slate-500 uppercase leading-none">
@@ -647,7 +736,7 @@ export default function App() {
 
                       {/* Names of the walkers traveling together */}
                       <div className="bg-slate-900 text-slate-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full shadow-md mt-1 whitespace-nowrap border border-slate-700 select-none pointer-events-auto leading-none">
-                        👥 Nick, Gurce, Wayne, Louise, Kira & Connor
+                        👥 Nick, Gurch, Wayne, Louise, Kira & Connor
                       </div>
                     </div>
                   );

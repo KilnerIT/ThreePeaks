@@ -105,7 +105,7 @@ const defaultDbState: DbState = {
   },
   walkers: [
     { name: "Nick", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️" },
-    { name: "Gurce", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️" },
+    { name: "Gurch", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️" },
     { name: "Wayne", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🥾" },
     { name: "Louise", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♀️" },
     { name: "Kira", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🎒" },
