@@ -446,33 +446,9 @@ export default function App() {
         </div>
       )}
 
-      {/* INTEGRATED TOP WIDGETS: WEATHER & MESSAGING FEED */}
-      <div className="relative z-20 px-4 md:px-8 grid grid-cols-1 lg:grid-cols-12 gap-3.5 mt-3">
-        {/* Left Column: Weather (lg:col-span-4) */}
-        <div className="lg:col-span-4">
-          <WeatherWidget />
-        </div>
-
-        {/* Right Column: Messaging Platform (lg:col-span-8) */}
-        <div className="lg:col-span-8">
-          <MessagingPlatform
-            updates={updates}
-            newAuthor={newAuthor}
-            setNewAuthor={setNewAuthor}
-            newText={newText}
-            setNewText={setNewText}
-            newImage={newImage}
-            setNewImage={setNewImage}
-            newType={newType}
-            setNewType={setNewType}
-            dragActive={dragActive}
-            setDragActive={setDragActive}
-            handleAddLivePost={handleAddLivePost}
-            handleDeletePost={handleDeletePost}
-            fileInputRef={fileInputRef}
-            processImageFile={processImageFile}
-          />
-        </div>
+      {/* WEATHER BAR - SIT BELOW TITLE AND TAKE FULL SCREEN WIDTH */}
+      <div className="relative z-20 px-4 md:px-8 mt-3 animate-fade-in">
+        <WeatherWidget />
       </div>
 
       {/* MAIN METRICS CARDS BOXES - HIGH DENSITY COMPACT STYLING */}
@@ -551,136 +527,162 @@ export default function App() {
         </div>
       </main>
 
-      {/* CORE CARTOON PROGRESS STAGE WITH STYLED INTERACTIVE ELEVATION PATTERNS */}
-      <section className="relative mt-4 z-10 py-4 px-4 md:px-8 flex-1 flex flex-col justify-end min-h-[360px] bg-sky-200 rounded-[2rem] border-4 border-emerald-700 shadow-2xl overflow-hidden">
-        
-        {/* Realistic Cartoon Sky background decoration */}
-        <div className="absolute inset-0 bg-gradient-to-b from-sky-400 to-sky-200 pointer-events-none rounded-[1.85rem] z-0" />
+      {/* COMMAND CENTER: SIDE-BY-SIDE MAP & LIVE UPDATES DASHBOARD */}
+      <div className="relative z-20 px-4 md:px-8 grid grid-cols-1 lg:grid-cols-12 gap-5 mt-4">
+        {/* Left Hand: Hiker Elevation Trail Path Map (lg:col-span-8) */}
+        <div className="lg:col-span-8 flex flex-col">
+          <section className="relative flex-1 flex flex-col justify-end min-h-[400px] lg:h-[450px] bg-sky-200 rounded-[2rem] border-4 border-emerald-700 shadow-2xl overflow-hidden mt-0">
+            
+            {/* Realistic Cartoon Sky background decoration */}
+            <div className="absolute inset-0 bg-gradient-to-b from-sky-400 to-sky-200 pointer-events-none rounded-[1.85rem] z-0" />
 
-        {/* Dynamic sun shining brightly */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-[10%] w-20 h-20 bg-amber-300/40 rounded-full blur-xs border-4 border-amber-400 pointer-events-none opacity-80 z-0" />
+            {/* Dynamic sun shining brightly */}
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-[10%] w-20 h-20 bg-amber-300/40 rounded-full blur-xs border-4 border-amber-400 pointer-events-none opacity-80 z-0" />
 
-        {/* HORIZONTALLY SCROLLABLE WRAPPER FOR TRAIL - SCROLLS PRECISELY ON MOBILE & TABLETS */}
-        <div className="w-full overflow-x-auto relative z-10 pb-4 pt-16 scrollbar-thin scrollbar-thumb-emerald-700/50 scrollbar-track-transparent">
-          <div className="relative w-full min-w-[850px] h-[240px]">
-            {/* PROPORTIONAL TRAIL PROFILE (Linear Custom Terrain Mapping) */}
-            <div className="absolute bottom-8 left-[5%] right-[5%] h-[120px] z-10 pointer-events-none">
-              <svg className="w-full h-full overflow-visible animate-fade-in" viewBox="0 0 1000 120" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="terrainFillGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#4ADE80" stopOpacity="0.9" /> {/* Rich Green peaks */}
-                    <stop offset="50%" stopColor="#22C55E" stopOpacity="0.75" />
-                    <stop offset="100%" stopColor="#78350F" stopOpacity="0.95" /> {/* Clay / Grass core */}
-                  </linearGradient>
-                </defs>
-                {/* Filled green mountain polygon area */}
-                <path
-                  d={`M 0 120 L 0 ${(120 - (250/750)*100).toFixed(1)} ${
-                    ELEVATION_PROFILE.map(p => `L ${(p.miles / 24.0) * 1000} ${(120 - (p.alt / 750) * 105).toFixed(1)}`).join(" ")
-                  } L 1000 120 Z`}
-                  fill="url(#terrainFillGrad)"
-                />
-                {/* Solid trail ridge outline */}
-                <path
-                  d={ELEVATION_PROFILE.map((p, idx) => {
-                    const x = (p.miles / 24.0) * 1000;
-                    const y = 120 - (p.alt / 750) * 105;
-                    return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-                  }).join(" ")}
-                  fill="none"
-                  stroke="#15803D"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            {/* Proportional Landmark Pins on the trail */}
-            <div className="absolute bottom-8 left-[5%] right-[5%] h-[120px] pointer-events-none z-20">
-              {LANDMARKS.map((landmark) => {
-                const leftPercent = (landmark.miles / 24.0) * 100;
-                const landmarkYCenter = 120 - (landmark.alt / 750) * 105;
-                
-                return (
-                  <div
-                    key={landmark.name}
-                    className="absolute flex flex-col items-center"
-                    style={{
-                      left: `${leftPercent}%`,
-                      bottom: `${120 - landmarkYCenter}px`, // places at exact height
-                    }}
-                  >
-                    {/* Dashed vertical height measure standard indicator */}
-                    <div className="w-0.5 h-10 bg-emerald-800/20 border-l-2 border-dashed border-emerald-950/30 mb-1" />
-                    
-                    {/* Visual bubble container */}
-                    <div className="flex flex-col items-center bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-amber-400 shadow-md pointer-events-auto transform -translate-x-1/2 hover:scale-105 transition-all">
-                      <span className="text-base select-none">{landmark.emoji}</span>
-                      <span className="text-[9px] font-black tracking-normal text-slate-800 mt-0.5 leading-tight">
-                        {landmark.name}
-                      </span>
-                      <span className="text-[7.5px] font-mono text-emerald-800 font-extrabold bg-emerald-50 px-1 rounded-sm mt-0.5">
-                        {landmark.alt}m • {landmark.miles} mi
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* DYNAMIC PROGRESS TEAM PACK - Single unified walker icon representing the group */}
-            {(() => {
-              const currentAlt = getAltitudeForMiles(totalMiles);
-              const walkerYCenter = 120 - (currentAlt / 750) * 105;
-              // Set progress coordinate bottom based on the SVG and coordinates
-              const offsetBottomPx = 120 - walkerYCenter;
-
-              return (
-                <div
-                  className="absolute z-25 flex flex-col items-center origin-bottom transition-all duration-700 ease-out"
-                  style={{
-                    left: `calc(5% + (${Math.min(100, Math.max(0, (totalMiles / 24.0) * 100))}% * 0.9) - 44px)`,
-                    bottom: `${offsetBottomPx + 10}px`
-                  }}
-                >
-                  {/* Floating Squad Badge stats */}
-                  <div className="bg-white/95 border border-emerald-600 px-2 py-1 rounded-xl shadow-lg text-center mb-1 flex flex-col items-center gap-0.5 animate-bounce-slow shrink-0 pointer-events-auto">
-                    <span className="text-emerald-700 text-[8.5px] font-black uppercase tracking-wider flex items-center gap-0.5 leading-none">
-                      🏞️ SQUAD ON TRAIL
-                    </span>
-                    <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1 py-0.5 rounded font-black font-mono">
-                      {totalMiles.toFixed(2)} mi ({progressPercent}%)
-                    </span>
-                    <span className="text-[7.5px] font-black text-slate-500 uppercase leading-none">
-                      ALT: {currentAlt}m
-                    </span>
-                  </div>
-
-                  {/* Single animated Walker character representing 3 Peaks Walkers */}
-                  <div className="relative pointer-events-auto">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-yellow-400 border-2 border-white shadow-lg flex items-center justify-center text-xl select-none animate-bounce">
-                      🚶‍♂️
-                    </div>
-                    {/* Mini hikers pack shadow/indicator */}
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-7 h-1.5 bg-slate-900/30 blur-xs rounded-full pointer-events-none" />
-                  </div>
-
-                  {/* Names of the walkers traveling together */}
-                  <div className="bg-slate-900 text-slate-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full shadow-md mt-1 whitespace-nowrap border border-slate-700 select-none pointer-events-auto leading-none">
-                    👥 Nick, Gurce, Wayne, Louise, Kira & Connor
-                  </div>
+            {/* HORIZONTALLY SCROLLABLE WRAPPER FOR TRAIL - SCROLLS PRECISELY ON MOBILE & TABLETS */}
+            <div className="w-full overflow-x-auto relative z-10 pb-4 pt-16 scrollbar-thin scrollbar-thumb-emerald-700/50 scrollbar-track-transparent">
+              <div className="relative w-full min-w-[850px] h-[240px]">
+                {/* PROPORTIONAL TRAIL PROFILE (Linear Custom Terrain Mapping) */}
+                <div className="absolute bottom-8 left-[5%] right-[5%] h-[120px] z-10 pointer-events-none">
+                  <svg className="w-full h-full overflow-visible animate-fade-in" viewBox="0 0 1000 120" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="terrainFillGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4ADE80" stopOpacity="0.9" /> {/* Rich Green peaks */}
+                        <stop offset="50%" stopColor="#22C55E" stopOpacity="0.75" />
+                        <stop offset="100%" stopColor="#78350F" stopOpacity="0.95" /> {/* Clay / Grass core */}
+                      </linearGradient>
+                    </defs>
+                    {/* Filled green mountain polygon area */}
+                    <path
+                      d={`M 0 120 L 0 ${(120 - (250/750)*100).toFixed(1)} ${
+                        ELEVATION_PROFILE.map(p => `L ${(p.miles / 24.0) * 1000} ${(120 - (p.alt / 750) * 105).toFixed(1)}`).join(" ")
+                      } L 1000 120 Z`}
+                      fill="url(#terrainFillGrad)"
+                    />
+                    {/* Solid trail ridge outline */}
+                    <path
+                      d={ELEVATION_PROFILE.map((p, idx) => {
+                        const x = (p.miles / 24.0) * 1000;
+                        const y = 120 - (p.alt / 750) * 105;
+                        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+                      }).join(" ")}
+                      fill="none"
+                      stroke="#15803D"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </div>
-              );
-            })()}
-          </div>
+
+                {/* Proportional Landmark Pins on the trail */}
+                <div className="absolute bottom-8 left-[5%] right-[5%] h-[120px] pointer-events-none z-20">
+                  {LANDMARKS.map((landmark) => {
+                    const leftPercent = (landmark.miles / 24.0) * 100;
+                    const landmarkYCenter = 120 - (landmark.alt / 750) * 105;
+                    
+                    return (
+                      <div
+                        key={landmark.name}
+                        className="absolute flex flex-col items-center"
+                        style={{
+                          left: `${leftPercent}%`,
+                          bottom: `${120 - landmarkYCenter}px`, // places at exact height
+                        }}
+                      >
+                        {/* Dashed vertical height measure standard indicator */}
+                        <div className="w-0.5 h-10 bg-emerald-800/20 border-l-2 border-dashed border-emerald-950/30 mb-1" />
+                        
+                        {/* Visual bubble container */}
+                        <div className="flex flex-col items-center bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-xl border border-amber-400 shadow-md pointer-events-auto transform -translate-x-1/2 hover:scale-105 transition-all">
+                          <span className="text-base select-none">{landmark.emoji}</span>
+                          <span className="text-[9px] font-black tracking-normal text-slate-800 mt-0.5 leading-tight">
+                            {landmark.name}
+                          </span>
+                          <span className="text-[7.5px] font-mono text-emerald-800 font-extrabold bg-emerald-50 px-1 rounded-sm mt-0.5">
+                            {landmark.alt}m • {landmark.miles} mi
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* DYNAMIC PROGRESS TEAM PACK - Single unified walker icon representing the group */}
+                {(() => {
+                  const currentAlt = getAltitudeForMiles(totalMiles);
+                  const walkerYCenter = 120 - (currentAlt / 750) * 105;
+                  // Set progress coordinate bottom based on the SVG and coordinates
+                  const offsetBottomPx = 120 - walkerYCenter;
+
+                  return (
+                    <div
+                      className="absolute z-25 flex flex-col items-center origin-bottom transition-all duration-700 ease-out"
+                      style={{
+                        left: `calc(5% + (${Math.min(100, Math.max(0, (totalMiles / 24.0) * 100))}% * 0.9) - 44px)`,
+                        bottom: `${offsetBottomPx + 10}px`
+                      }}
+                    >
+                      {/* Floating Squad Badge stats */}
+                      <div className="bg-white/95 border border-emerald-600 px-2 py-1 rounded-xl shadow-lg text-center mb-1 flex flex-col items-center gap-0.5 animate-bounce-slow shrink-0 pointer-events-auto">
+                        <span className="text-emerald-700 text-[8.5px] font-black uppercase tracking-wider flex items-center gap-0.5 leading-none">
+                          🏞️ SQUAD ON TRAIL
+                        </span>
+                        <span className="bg-emerald-100 text-emerald-800 text-[8px] px-1 py-0.5 rounded font-black font-mono">
+                          {totalMiles.toFixed(2)} mi ({progressPercent}%)
+                        </span>
+                        <span className="text-[7.5px] font-black text-slate-500 uppercase leading-none">
+                          ALT: {currentAlt}m
+                        </span>
+                      </div>
+
+                      {/* Single animated Walker character representing 3 Peaks Walkers */}
+                      <div className="relative pointer-events-auto">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-yellow-400 border-2 border-white shadow-lg flex items-center justify-center text-xl select-none animate-bounce">
+                          🚶‍♂️
+                        </div>
+                        {/* Mini hikers pack shadow/indicator */}
+                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-7 h-1.5 bg-slate-900/30 blur-xs rounded-full pointer-events-none" />
+                      </div>
+
+                      {/* Names of the walkers traveling together */}
+                      <div className="bg-slate-900 text-slate-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full shadow-md mt-1 whitespace-nowrap border border-slate-700 select-none pointer-events-auto leading-none">
+                        👥 Nick, Gurce, Wayne, Louise, Kira & Connor
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Dynamic placement of GPS device coordinate text marker */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center text-[9px] font-mono font-black text-slate-800/80 uppercase tracking-widest z-20 pointer-events-none select-none bg-white/70 px-3 py-1 rounded-full border border-slate-300 backdrop-blur-sm">
+              📍 Core GPS: Lat: {stats.currentLat?.toFixed(4) || "54.1488"} • Lng: {stats.currentLng?.toFixed(4) || "-2.2858"}
+            </div>
+          </section>
         </div>
 
-        {/* Dynamic placement of GPS device coordinate text marker */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center text-[9px] font-mono font-black text-slate-800/80 uppercase tracking-widest z-20 pointer-events-none select-none bg-white/70 px-3 py-1 rounded-full border border-slate-300 backdrop-blur-sm">
-          📍 Core GPS: Lat: {stats.currentLat?.toFixed(4) || "54.1488"} • Lng: {stats.currentLng?.toFixed(4) || "-2.2858"}
+        {/* Right Hand: Messaging platform live stream feed & broadcast composer (lg:col-span-4) */}
+        <div className="lg:col-span-4 flex flex-col">
+          <MessagingPlatform
+            updates={updates}
+            newAuthor={newAuthor}
+            setNewAuthor={setNewAuthor}
+            newText={newText}
+            setNewText={setNewText}
+            newImage={newImage}
+            setNewImage={setNewImage}
+            newType={newType}
+            setNewType={setNewType}
+            dragActive={dragActive}
+            setDragActive={setDragActive}
+            handleAddLivePost={handleAddLivePost}
+            handleDeletePost={handleDeletePost}
+            fileInputRef={fileInputRef}
+            processImageFile={processImageFile}
+          />
         </div>
-      </section>
+      </div>
 
       {/* ADMIN CONFIGURATION / STREAM SETTINGS MODAL */}
       <AnimatePresence>
