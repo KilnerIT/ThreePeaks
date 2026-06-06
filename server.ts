@@ -6,7 +6,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
+// Vite import is handled dynamically in development mode below
 import dotenv from "dotenv";
 
 // Load environment variables
@@ -143,7 +143,9 @@ function loadDb() {
       saveDb();
     }
   } catch (err) {
-    console.error("Failed to load db.json, using fallback database:", err);
+    console.error("Failed to load db.json, resetting to default database state:", err);
+    db = { ...defaultDbState };
+    saveDb();
   }
 }
 
@@ -617,7 +619,8 @@ app.post("/api/updates/delete", (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     // Vite middleware for development
-    const vite = await createViteServer({
+    const { createServer } = await import("vite");
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
