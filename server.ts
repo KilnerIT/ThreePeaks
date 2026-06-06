@@ -19,8 +19,10 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ limit: "20mb", extended: true }));
 
-// Path to data file
-const DB_FILE_PATH = path.join(process.cwd(), "db.json");
+// Path to data file (dynamically resolves either from app root or bundle location for container environments)
+const DB_FILE_PATH = fs.existsSync(path.join(process.cwd(), "package.json"))
+  ? path.join(process.cwd(), "db.json")
+  : path.resolve(__dirname, "..", "db.json");
 
 // Yorkshire Three Peaks Coordinates and Distances list
 interface TrackPoint {
@@ -622,7 +624,23 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Dist folder static serving in Production
-    const distPath = path.join(process.cwd(), "dist");
+    // Robust resolution of static assets folder (handles both process.cwd wrappers and bundler structure)
+    let distPath = path.join(process.cwd(), "dist");
+    if (!fs.existsSync(distPath) || !fs.existsSync(path.join(distPath, "index.html"))) {
+      // Fallback 1: check relative to script file dir (__dirname)
+      const relativeDist = path.resolve(__dirname, ".");
+      if (fs.existsSync(relativeDist) && fs.existsSync(path.join(relativeDist, "index.html"))) {
+        distPath = relativeDist;
+      } else {
+        // Fallback 2: check parent directory of the script file
+        const upDist = path.resolve(__dirname, "..", "dist");
+        if (fs.existsSync(upDist) && fs.existsSync(path.join(upDist, "index.html"))) {
+          distPath = upDist;
+        }
+      }
+    }
+
+    console.log(`📡 Production Assets serving from folder: ${distPath}`);
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
