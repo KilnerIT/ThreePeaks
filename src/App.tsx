@@ -98,6 +98,23 @@ export default function App() {
   const [editLat, setEditLat] = useState<number>(54.1488);
   const [editLng, setEditLng] = useState<number>(-2.2858);
   const [editSheetUrl, setEditSheetUrl] = useState<string>("");
+  const [editWalkStatus, setEditWalkStatus] = useState<string>("Pending");
+
+  // Timer reference state
+  const [liveNow, setLiveNow] = useState<Date>(new Date());
+
+  // Increment page view count once per unique browser session
+  useEffect(() => {
+    const isCounted = sessionStorage.getItem("peaks_visitor_counted");
+    if (!isCounted) {
+      fetch("/api/increment-visitors", { method: "POST" })
+        .then(() => {
+          sessionStorage.setItem("peaks_visitor_counted", "true");
+          fetchData();
+        })
+        .catch(err => console.error("Error logging visitor count:", err));
+    }
+  }, []);
 
   // Check initial authentication
   useEffect(() => {
@@ -109,6 +126,21 @@ export default function App() {
     const interval = setInterval(fetchData, 8000); // Poll every 8 seconds
     return () => clearInterval(interval);
   }, []);
+
+  // Continuous timer ticker while walk is active
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    const isRunning = dbData?.stats?.startTime && dbData?.stats?.walkStatus !== "Finish";
+    
+    if (isRunning) {
+      interval = setInterval(() => {
+        setLiveNow(new Date());
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [dbData?.stats?.startTime, dbData?.stats?.walkStatus]);
 
   const fetchData = async () => {
     try {
@@ -124,6 +156,7 @@ export default function App() {
           if (data.stats.currentLat) setEditLat(data.stats.currentLat);
           if (data.stats.currentLng) setEditLng(data.stats.currentLng);
           if (data.stats.sheetUrl) setEditSheetUrl(data.stats.sheetUrl);
+          if (data.stats.walkStatus) setEditWalkStatus(data.stats.walkStatus);
         }
         setError(null);
       } else {
@@ -168,6 +201,7 @@ export default function App() {
         currentLat: Number(editLat),
         currentLng: Number(editLng),
         sheetUrl: editSheetUrl,
+        walkStatus: editWalkStatus,
       };
 
       const response = await fetch("/api/update/stats", {
@@ -304,6 +338,7 @@ export default function App() {
     setEditLng(-2.2858);
     setEditMiles(0.0);
     setEditSteps(0);
+    setEditWalkStatus("Start");
   };
 
   const setToPeak1 = () => {
@@ -311,6 +346,7 @@ export default function App() {
     setEditLng(-2.2505);
     setEditMiles(3.2);
     setEditSteps(7200);
+    setEditWalkStatus("Start");
   };
 
   const setToViaduct = () => {
@@ -318,6 +354,7 @@ export default function App() {
     setEditLng(-2.3703);
     setEditMiles(11.5);
     setEditSteps(24500);
+    setEditWalkStatus("Start");
   };
 
   const setToPeak2 = () => {
@@ -325,6 +362,7 @@ export default function App() {
     setEditLng(-2.4011);
     setEditMiles(15.5);
     setEditSteps(34000);
+    setEditWalkStatus("Start");
   };
 
   const setToPeak3 = () => {
@@ -332,6 +370,7 @@ export default function App() {
     setEditLng(-2.3976);
     setEditMiles(20.8);
     setEditSteps(45000);
+    setEditWalkStatus("Start");
   };
 
   const setToFinish = () => {
@@ -339,6 +378,7 @@ export default function App() {
     setEditLng(-2.2858);
     setEditMiles(24.0);
     setEditSteps(55000);
+    setEditWalkStatus("Finish");
   };
 
   if (loading && !dbData) {
@@ -373,6 +413,53 @@ export default function App() {
   const totalSteps = walkers.reduce((acc, curr) => acc + curr.steps, 0);
   const averageSteps = walkers.length > 0 ? Math.round(totalSteps / walkers.length) : 0;
 
+  // Extract custom status metrics
+  const visitorCount = stats.visitorCount ?? 42;
+  const startTime = stats.startTime;
+  const finishTime = stats.finishTime;
+  const walkStatus = stats.walkStatus || "Pending";
+
+  const getElapsedTimeString = () => {
+    if (!startTime) return "00h 00m 00s";
+    
+    const startMs = new Date(startTime).getTime();
+    const endMs = walkStatus === "Finish" && finishTime
+      ? new Date(finishTime).getTime()
+      : liveNow.getTime();
+      
+    if (isNaN(startMs)) return "00h 00m 00s";
+    
+    const diffMs = endMs - startMs;
+    if (diffMs <= 0) return "00h 00m 00s";
+    
+    const totalSecs = Math.floor(diffMs / 1000);
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    
+    const hStr = hrs > 0 ? `${hrs}h ` : "";
+    const mStr = `${mins.toString().padStart(2, "0")}m `;
+    const sStr = `${secs.toString().padStart(2, "0")}s`;
+    
+    return `${hStr}${mStr}${sStr}`;
+  };
+
+  const getElapsedCelebrationText = () => {
+    if (!startTime || !finishTime) return "11 Hours, 15 Minutes, 20 Seconds";
+    const startMs = new Date(startTime).getTime();
+    const endMs = new Date(finishTime).getTime();
+    const diffMs = Math.max(0, endMs - startMs);
+    const totalSecs = Math.floor(diffMs / 1000);
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    
+    const hStr = hrs > 0 ? `${hrs} Hours, ` : "";
+    const mStr = `${mins} Minutes, `;
+    const sStr = `${secs} Seconds`;
+    return `${hStr}${mStr}${sStr}`;
+  };
+
   return (
     <div className="min-h-screen bg-[#87CEEB] font-sans flex flex-col text-slate-700 relative overflow-x-hidden pb-12">
       {/* Cartoon Background sky items */}
@@ -399,6 +486,17 @@ export default function App() {
 
         {/* Google Sheets Status & Lock Button */}
         <div className="flex flex-wrap gap-2 items-center justify-center">
+          {/* Live Visitor/Viewer Count Badge */}
+          <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2">
+            <span className="text-xs">👁️</span>
+            <div className="text-left font-sans">
+              <span className="block text-[8px] font-black text-white/50 uppercase tracking-widest leading-none">Total Views</span>
+              <span className="text-[10px] font-extrabold text-emerald-300 font-mono">
+                {visitorCount} visitors
+              </span>
+            </div>
+          </div>
+
           {/* Simulated vs Live Status Indicator */}
           <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2">
             <div className="text-left">
@@ -450,6 +548,189 @@ export default function App() {
       <div className="relative z-20 px-4 md:px-8 mt-3 animate-fade-in">
         <WeatherWidget />
       </div>
+
+      {/* DYNAMIC TIME CHRONO HEADLINE CARD */}
+      <div className="relative z-20 px-4 md:px-8 mt-3 animate-fade-in">
+        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-[#1e3a1e] text-white rounded-2xl p-4 md:p-5 shadow-xl border-2 border-emerald-700/80 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl bg-emerald-900 shadow-inner border border-emerald-700 shrink-0 ${walkStatus === 'Start' ? 'animate-pulse' : ''}`}>
+              {walkStatus === "Finish" ? "🏆" : "⏱️"}
+            </div>
+            <div className="text-left font-sans">
+              <div className="flex items-center flex-wrap gap-2">
+                <span className={`px-2 py-0.5 rounded-md text-[8.5px] font-black uppercase tracking-wider ${
+                  walkStatus === 'Finish' ? 'bg-yellow-500 text-slate-950' : walkStatus === 'Start' ? 'bg-emerald-500 text-white animate-pulse' : 'bg-slate-700 text-slate-300'
+                }`}>
+                  {walkStatus === "Finish" ? "🟢 HIKE CONQUERED" : walkStatus === "Start" ? "🟢 WALKING IN PROGRESS" : "⏳ READY AT BASECAMP"}
+                </span>
+                <span className="text-[9.5px] font-mono text-emerald-400 font-extrabold uppercase">
+                  {startTime ? `Departure: ${new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : "Awaiting Sheet Status"}
+                </span>
+              </div>
+              <h3 className="text-base md:text-lg font-black uppercase tracking-tight mt-1 text-white flex items-center gap-2">
+                ⏱️ Elapsed Trekking Duration
+              </h3>
+              <p className="text-[10px] text-slate-300 opacity-90">
+                {walkStatus === "Finish" 
+                  ? "Congratulations! The peaks have been conquered and the tracking timer is frozen."
+                  : "Calculating elapsed time dynamically between sheets 'Start' status trigger and current live tick."}
+              </p>
+            </div>
+          </div>
+
+          {/* TIMER CHRONO TICKER */}
+          <div className="bg-black/40 border border-slate-700/40 px-5 py-2.5 rounded-xl text-center shrink-0 w-full md:w-auto min-w-[190px]">
+            <span className="block text-[7px] font-black uppercase tracking-widest text-[#4ade80] mb-0.5 font-sans">CHRONOMETER ELAPSED</span>
+            <span className="font-mono text-xl md:text-2xl font-extrabold text-white tracking-widest drop-shadow-[0_1.5px_3px_rgba(0,0,0,0.6)] tabular-nums block animate-fade-in">
+              {getElapsedTimeString()}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {walkStatus === "Finish" ? (
+        <div className="relative z-20 px-4 md:px-8 mt-4 space-y-5 animate-fade-in">
+          {/* CONGRATULATIONS CELEBRATION CARD */}
+          <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-3xl p-6 md:p-10 shadow-2xl border-4 border-yellow-500/80 text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[400px]">
+            {/* Background design accents */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent opacity-60" />
+            <div className="absolute top-10 left-10 w-32 h-32 bg-yellow-500/10 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute bottom-10 right-10 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl animate-pulse delay-75" />
+
+            {/* Golden trophy badge */}
+            <motion.div 
+              initial={{ scale: 0.5, y: 50, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 100, delay: 0.1 }}
+              className="relative z-10 w-24 h-24 bg-gradient-to-b from-yellow-300 to-amber-500 rounded-3xl flex items-center justify-center text-5xl shadow-2xl border border-yellow-250 animate-bounce-slow"
+            >
+              🏆
+            </motion.div>
+
+            <motion.h2 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="text-2xl md:text-5xl font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-250 to-yellow-300 mt-6 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] leading-tight"
+            >
+              YORKSHIRE THREE PEAKS WALK SUCCESS! 🎉
+            </motion.h2>
+
+            <motion.p 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="max-w-2xl text-slate-200 font-bold text-xs md:text-sm mt-3 tracking-wide"
+            >
+              Nick, Gurch, Wayne, Louise, Kira & Connor have officially beaten the clock and completed the legendary 24.0-mile peaks trek!
+            </motion.p>
+
+            {/* CORE PERFORMANCE METRICS */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl mt-8 relative z-10">
+              {/* TOTAL TIME */}
+              <motion.div 
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="bg-black/50 border-2 border-yellow-500/40 rounded-2xl p-4 text-center shadow-lg relative overflow-hidden"
+              >
+                <span className="block text-[8px] font-black uppercase tracking-widest text-yellow-400 font-sans">Total Time</span>
+                <span className="block text-xl md:text-2xl font-mono font-black text-white mt-1">
+                  {getElapsedCelebrationText()}
+                </span>
+                <span className="block text-[9.5px] text-slate-400 mt-1 font-sans">start status → finish status</span>
+              </motion.div>
+
+              {/* TOTAL STEPS */}
+              <motion.div 
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="bg-black/50 border-2 border-emerald-500/40 rounded-2xl p-4 text-center shadow-lg relative overflow-hidden"
+              >
+                <span className="block text-[8px] font-black uppercase tracking-widest text-[#4ade80] font-sans">Total Steps</span>
+                <span className="block text-xl md:text-2xl font-mono font-black text-white mt-1">
+                  {averageSteps.toLocaleString()}
+                </span>
+                <span className="block text-[9.5px] text-slate-400 mt-1 font-sans">avg total steps per walker</span>
+              </motion.div>
+
+              {/* TOTAL MILES */}
+              <motion.div 
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="bg-black/50 border-2 border-indigo-500/40 rounded-2xl p-4 text-center shadow-lg relative overflow-hidden"
+              >
+                <span className="block text-[8px] font-black uppercase tracking-widest text-indigo-400 font-sans">Total Distance</span>
+                <span className="block text-xl md:text-2xl font-mono font-black text-white mt-1">
+                  24.0 mi
+                </span>
+                <span className="block text-[9.5px] text-slate-400 mt-1 font-sans">100% course completed</span>
+              </motion.div>
+            </div>
+
+            {/* DECORATION CORNER BADGES */}
+            <div className="mt-8 text-[9px] sm:text-[10px] font-semibold text-slate-300 border border-slate-700/60 px-4 py-1.5 rounded-full bg-slate-900/60 font-sans">
+              🌟 Challenge Course: Horton-in-Ribblesdale → Pen-y-ghent → Whernside → Ingleborough → Horton
+            </div>
+          </div>
+
+          {/* SQUAD FEED & MEMORY GALLERY */}
+          <div className="bg-white rounded-3xl p-5 md:p-6 shadow-xl border border-slate-100 mt-4">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <div className="text-left font-sans">
+                <h3 className="text-lg font-black uppercase tracking-tight text-slate-800">📸 Peaks Memory Gallery & Live Updates</h3>
+                <p className="text-xs text-slate-500">Relive the journey steps and peaks snapshots recorded on the Yorkshire walk</p>
+              </div>
+              <span className="px-3 py-1 bg-indigo-50 text-indigo-800 text-xs font-black uppercase tracking-wider rounded-xl border border-indigo-150 font-sans">
+                {updates.length} memories
+              </span>
+            </div>
+
+            {/* RENDER POSTS FEED LIST */}
+            <div className="space-y-4">
+              {updates.length === 0 ? (
+                <p className="text-center font-bold text-xs text-slate-400 py-6">No snapshots recorded yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {updates.slice().reverse().map((upd) => (
+                    <div key={upd.id} className="p-3 border border-slate-150 bg-slate-50 rounded-2xl flex gap-3 relative text-left">
+                      {upd.image && (
+                        <div className="w-16 h-16 rounded-xl relative overflow-hidden bg-slate-200 border border-slate-200 shrink-0 select-none">
+                          <img 
+                            src={upd.image} 
+                            alt="hike post snapshot" 
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover hover:scale-105 duration-200 cursor-pointer"
+                            onClick={() => {
+                              window.open(upd.image, '_blank');
+                            }}
+                          />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0 font-sans">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md text-[8.5px] font-black uppercase bg-indigo-100 text-indigo-800 leading-none">
+                            {upd.author === "Gurce" ? "Gurch" : upd.author}
+                          </span>
+                          <span className="text-[8px] font-mono font-bold text-slate-400">
+                            {new Date(upd.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold leading-snug text-slate-700 mt-1 break-words">
+                          {upd.text}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
 
       {/* MAIN METRICS CARDS BOXES - HIGH DENSITY COMPACT STYLING */}
       <main className="relative z-20 grid grid-cols-1 md:grid-cols-3 gap-3.5 px-4 md:px-8 mt-3">
@@ -712,31 +993,21 @@ export default function App() {
                         bottom: `${offsetBottomPx + 10}px`
                       }}
                     >
-                      {/* Floating Squad Badge stats */}
-                      <div className="bg-white/95 border-2 border-orange-500 px-2 py-1 rounded-xl shadow-lg text-center mb-1 flex flex-col items-center gap-0.5 animate-bounce-slow shrink-0 pointer-events-auto">
-                        <span className="text-orange-600 text-[8.5px] font-black uppercase tracking-wider flex items-center gap-0.5 leading-none">
-                          🏞️ SQUAD ON TRAIL
-                        </span>
-                        <span className="bg-orange-100 text-orange-900 text-[8px] px-1 py-0.5 rounded font-black font-mono">
-                          {totalMiles.toFixed(2)} mi ({progressPercent}%)
-                        </span>
-                        <span className="text-[7.5px] font-black text-slate-500 uppercase leading-none">
-                          ALT: {currentAlt}m
-                        </span>
-                      </div>
-
-                      {/* Single animated Walker character representing 3 Peaks Walkers */}
+                      {/* Animated Group of 6 (Squad) Indicator */}
                       <div className="relative pointer-events-auto">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-500 to-yellow-400 border-2 border-white shadow-lg flex items-center justify-center text-xl select-none animate-bounce">
-                          🚶‍♂️
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-emerald-600 via-teal-500 to-amber-400 border-2 border-white shadow-lg flex items-center justify-center text-2xl select-none animate-bounce">
+                          👥
+                          <span className="absolute -top-1 -right-1 bg-orange-500 text-white font-mono font-black text-[9px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-pulse">
+                            6
+                          </span>
                         </div>
                         {/* Mini hikers pack shadow/indicator */}
-                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-7 h-1.5 bg-slate-900/30 blur-xs rounded-full pointer-events-none" />
+                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-slate-900/30 blur-xs rounded-full pointer-events-none" />
                       </div>
 
-                      {/* Names of the walkers traveling together */}
-                      <div className="bg-slate-900 text-slate-100 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full shadow-md mt-1 whitespace-nowrap border border-slate-700 select-none pointer-events-auto leading-none">
-                        👥 Nick, Gurch, Wayne, Louise, Kira & Connor
+                      {/* Squad label replacing specific names */}
+                      <div className="bg-emerald-900 text-emerald-100 text-[8px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shadow-md mt-1.5 whitespace-nowrap border border-emerald-700 select-none pointer-events-auto leading-none">
+                        👥 Squad
                       </div>
                     </div>
                   );
@@ -744,9 +1015,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* Dynamic placement of GPS device coordinate text marker */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center text-[9px] font-mono font-black text-slate-800/80 uppercase tracking-widest z-20 pointer-events-none select-none bg-white/70 px-3 py-1 rounded-full border border-slate-300 backdrop-blur-sm">
-              📍 Core GPS: Lat: {stats.currentLat?.toFixed(4) || "54.1488"} • Lng: {stats.currentLng?.toFixed(4) || "-2.2858"}
+            {/* Dynamic placement of Squad on Trail progress text in place of GPS */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center text-[10px] font-black text-emerald-950 uppercase tracking-wide z-20 pointer-events-none select-none bg-white/95 border-2 border-emerald-700 px-4 py-1.5 rounded-full shadow-lg max-w-[90%] whitespace-nowrap animate-fade-in flex items-center gap-1.5 font-sans">
+              <span className="animate-pulse">🏞️</span> Squad on Trail Update: <span className="font-mono text-emerald-850 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-250 font-black">{totalMiles.toFixed(2)} mi</span> ({progressPercent}%) • <span className="font-mono text-[#064E3B] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-250 font-black">ALT: {getAltitudeForMiles(totalMiles)}m</span>
             </div>
           </section>
         </div>
@@ -772,6 +1043,8 @@ export default function App() {
           />
         </div>
       </div>
+        </>
+      )}
 
       {/* ADMIN CONFIGURATION / STREAM SETTINGS MODAL */}
       <AnimatePresence>
@@ -940,6 +1213,19 @@ export default function App() {
                             🏆 finish
                           </button>
                         </div>
+                      </div>
+
+                      <div className="mb-2.5">
+                        <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Hike Walk Status (Trigger Celebration/Timer)</label>
+                        <select
+                          value={editWalkStatus}
+                          onChange={(e) => setEditWalkStatus(e.target.value)}
+                          className="w-full text-xs font-bold p-2.5 border border-slate-250 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500 font-sans cursor-pointer text-slate-800"
+                        >
+                          <option value="Idle">⏳ Idle (Ready at Basecamp)</option>
+                          <option value="Start">🟢 Start (Walking on Trail)</option>
+                          <option value="Finish">🏆 Finish (Celebration View) 🎉</option>
+                        </select>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">

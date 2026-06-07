@@ -38,6 +38,10 @@ export interface AppStats {
   lastHaFetchSync?: string;
   lastHaFetchStatus?: string;
   sheetUrl?: string;
+  visitorCount?: number;
+  startTime?: string | null;
+  finishTime?: string | null;
+  walkStatus?: string; // 'Pending' | 'Start' | 'Finish'
 }
 
 export interface DbState {

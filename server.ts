@@ -67,6 +67,10 @@ interface DbState {
     lastHaFetchSync?: string;
     lastHaFetchStatus?: string;
     sheetUrl?: string;
+    visitorCount?: number;
+    startTime?: string | null;
+    finishTime?: string | null;
+    walkStatus?: string;
   };
   walkers: Array<{
     name: string;
@@ -101,7 +105,11 @@ const defaultDbState: DbState = {
     currentLng: -2.2858,
     lastHaFetchSync: new Date().toISOString(),
     lastHaFetchStatus: "Simulated Mode Active",
-    sheetUrl: "https://docs.google.com/spreadsheets/d/1gOS1Lswdnn9naDDcSNlKlbFbgUBxKFgYzklo4GblQCc"
+    sheetUrl: "https://docs.google.com/spreadsheets/d/1gOS1Lswdnn9naDDcSNlKlbFbgUBxKFgYzklo4GblQCc",
+    visitorCount: 37,
+    startTime: null,
+    finishTime: null,
+    walkStatus: "Pending"
   },
   walkers: [
     { name: "Nick", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️" },
@@ -346,6 +354,12 @@ async function syncWithGoogleSheet() {
       timeIndex = 0; // logical fallback index
     }
 
+    // Dynamically locate "status" column heading
+    let statusIndex = headers.findIndex(h => h === "status");
+    if (statusIndex === -1) {
+      statusIndex = headers.findIndex(h => h.includes("status"));
+    }
+
     let miles = NaN;
     let steps = NaN;
     let timestamp = "";
@@ -387,9 +401,53 @@ async function syncWithGoogleSheet() {
     db.stats.currentLat = progressPoint.lat;
     db.stats.currentLng = progressPoint.lng;
     db.stats.lastHaFetchSync = new Date().toISOString();
+
+    // Check status column for 'Start' or 'Finish' markers and timestamps
+    let foundStart = false;
+    let foundFinish = false;
+    let startTimestamp = "";
+    let finishTimestamp = "";
+
+    if (statusIndex > -1) {
+      for (let i = headerRowIndex + 1; i < lines.length; i++) {
+        const parts = parseCsvRow(lines[i]);
+        if (parts.length > statusIndex) {
+          const rowStatus = parts[statusIndex]?.toLowerCase().trim();
+          const rowTime = parts[timeIndex] || "";
+
+          if (rowStatus === "start") {
+            foundStart = true;
+            startTimestamp = rowTime;
+          } else if (rowStatus === "finish") {
+            foundFinish = true;
+            finishTimestamp = rowTime;
+          }
+        }
+      }
+    }
+
+    if (foundFinish && finishTimestamp) {
+      db.stats.startTime = startTimestamp || db.stats.startTime || new Date(new Date(finishTimestamp).getTime() - 11 * 60 * 60 * 1000).toISOString();
+      db.stats.finishTime = finishTimestamp;
+      db.stats.walkStatus = "Finish";
+    } else if (foundStart && startTimestamp) {
+      db.stats.startTime = startTimestamp;
+      db.stats.finishTime = null;
+      db.stats.walkStatus = "Start";
+    } else {
+      // Fallback
+      if (newMiles > 0) {
+        if (!db.stats.startTime) {
+          db.stats.startTime = new Date().toISOString();
+        }
+        db.stats.walkStatus = "Start";
+      } else {
+        db.stats.walkStatus = "Pending";
+      }
+    }
     
     // Provide gorgeous, highly detailed visual diagnostics output
-    db.stats.lastHaFetchStatus = `Synced successfully! Columns matched: miles ("${headers[milesIndex]}" @ index ${milesIndex}), steps ("${headers[stepsIndex]}" @ index ${stepsIndex}). Latest data: Dist: ${newMiles} mi, Steps: ${steps.toLocaleString()}. Row matched: "${matchedRowString}"`;
+    db.stats.lastHaFetchStatus = `Synced successfully! Columns matched: miles ("${headers[milesIndex]}"), steps ("${headers[stepsIndex]}"), status ("${statusIndex > -1 ? headers[statusIndex] : "none"}"). Status: ${db.stats.walkStatus || "N/A"}. Latest data: Dist: ${newMiles} mi, Steps: ${steps.toLocaleString()}`;
 
     // Map stats to all walkers in sync since they tracking as a single group
     db.walkers = db.walkers.map((walker) => {
@@ -464,6 +522,15 @@ setInterval(() => {
 
 // API ROUTES
 
+app.post("/api/increment-visitors", (req, res) => {
+  if (db.stats.visitorCount === undefined) {
+    db.stats.visitorCount = 37;
+  }
+  db.stats.visitorCount += 1;
+  saveDb();
+  res.json({ success: true, visitorCount: db.stats.visitorCount });
+});
+
 // Login to pass validation
 app.post("/api/login", (req, res) => {
   const { password } = req.body;
@@ -487,7 +554,7 @@ app.get("/api/data", (req, res) => {
 // Update manual mode coordinates or values
 app.post("/api/update/stats", (req, res) => {
   // Simple password check header can be validated, or we edit
-  const { manualMode, manualMiles, manualSteps, manualProgress, currentLat, currentLng, walkerUpdates, sheetUrl } = req.body;
+  const { manualMode, manualMiles, manualSteps, manualProgress, currentLat, currentLng, walkerUpdates, sheetUrl, walkStatus, startTime, finishTime } = req.body;
 
   if (sheetUrl !== undefined) {
     db.stats.sheetUrl = sheetUrl;
@@ -495,6 +562,32 @@ app.post("/api/update/stats", (req, res) => {
 
   if (manualMode !== undefined) {
     db.stats.manualMode = manualMode;
+  }
+
+  if (walkStatus !== undefined) {
+    db.stats.walkStatus = walkStatus;
+    if (walkStatus === "Start") {
+      if (!db.stats.startTime) {
+        db.stats.startTime = new Date().toISOString();
+      }
+      db.stats.finishTime = null;
+    } else if (walkStatus === "Finish") {
+      if (!db.stats.startTime) {
+        // Fallback: 11 hours and 15 mins tracking duration
+        db.stats.startTime = new Date(Date.now() - 11 * 60 * 60 * 1000 - 15 * 60 * 1000).toISOString();
+      }
+      db.stats.finishTime = new Date().toISOString();
+    } else if (walkStatus === "Pending") {
+      db.stats.startTime = null;
+      db.stats.finishTime = null;
+    }
+  }
+
+  if (startTime !== undefined) {
+    db.stats.startTime = startTime;
+  }
+  if (finishTime !== undefined) {
+    db.stats.finishTime = finishTime;
   }
 
   if (db.stats.manualMode) {
