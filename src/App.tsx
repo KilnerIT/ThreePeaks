@@ -92,7 +92,7 @@ export default function App() {
   const [newType, setNewType] = useState<'text' | 'photo' | 'summit'>("text");
 
   // Admin adjustments states
-  const [editAdminMode, setEditAdminMode] = useState<boolean>(true);
+  const [editAdminMode, setEditAdminMode] = useState<boolean>(false);
   const [editMiles, setEditMiles] = useState<number>(0);
   const [editSteps, setEditSteps] = useState<number>(0);
   const [editLat, setEditLat] = useState<number>(54.1488);
@@ -244,14 +244,8 @@ export default function App() {
     e.preventDefault();
     try {
       const payload = {
-        manualMode: editAdminMode,
-        manualMiles: Number(editMiles),
-        manualSteps: parseInt(String(editSteps), 10),
-        manualProgress: Math.min(100, Math.max(0, Math.round((Number(editMiles) / 24.0) * 100))),
-        currentLat: Number(editLat),
-        currentLng: Number(editLng),
+        manualMode: false,
         sheetUrl: editSheetUrl,
-        walkStatus: editWalkStatus,
       };
 
       const response = await fetch("/api/update/stats", {
@@ -264,7 +258,7 @@ export default function App() {
         await fetchData();
         setAdminOpen(false);
       } else {
-        alert("Could not update simulation statistics.");
+        alert("Could not update configuration.");
       }
     } catch (err) {
       console.error("Stats submission failure:", err);
@@ -458,8 +452,8 @@ export default function App() {
   };
 
   // Calculated aggregate figures
-  const totalMiles = stats.manualMode ? stats.manualMiles : (walkers[0]?.miles || 0);
-  const totalMeters = stats.manualMode ? (stats.manualMeters || Math.round(stats.manualMiles * 1609.344)) : (walkers[0]?.meters || Math.round((walkers[0]?.miles || 0) * 1609.344));
+  const totalMiles = walkers[0]?.miles || 0;
+  const totalMeters = walkers[0]?.meters || Math.round((walkers[0]?.miles || 0) * 1609.344);
   const progressPercent = Math.min(100, Math.max(0, Math.round((totalMiles / 24) * 100)));
   const totalSteps = walkers.reduce((acc, curr) => acc + curr.steps, 0);
   const averageSteps = walkers.length > 0 ? Math.round(totalSteps / walkers.length) : 0;
@@ -573,27 +567,25 @@ export default function App() {
             </div>
           </div>
 
-          {/* Simulated vs Live Status Indicator */}
+          {/* Google Sheets API Status Indicator */}
           <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2">
             <div className="text-left">
               <span className="block text-[8px] font-black text-white/70 uppercase tracking-widest leading-none">Data Stream</span>
-              <span className={`text-[10px] font-black flex items-center gap-1 ${stats.manualMode ? 'text-amber-300' : 'text-emerald-300'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${stats.manualMode ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-                {stats.manualMode ? 'SIMULATED DEMO' : 'GOOGLE SHEETS API'}
+              <span className="text-[10px] font-black flex items-center gap-1 text-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                GOOGLE SHEETS API
               </span>
             </div>
-            {!stats.manualMode && (
-              <button
-                id="force-sync-btn"
-                onClick={handleForceSync}
-                disabled={syncing}
-                title="Force refresh Google Sheet steps and miles"
-                className="p-1 px-1.5 bg-emerald-500 hover:bg-emerald-600 font-extrabold text-[9px] text-white rounded-lg transition-all flex items-center gap-0.5 shadow-sm active:scale-95 cursor-pointer"
-              >
-                <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
-                <span>SYNC</span>
-              </button>
-            )}
+            <button
+              id="force-sync-btn"
+              onClick={handleForceSync}
+              disabled={syncing}
+              title="Force refresh Google Sheet steps and miles"
+              className="p-1 px-1.5 bg-emerald-500 hover:bg-emerald-600 font-extrabold text-[9px] text-white rounded-lg transition-all flex items-center gap-0.5 shadow-sm active:scale-95 cursor-pointer"
+            >
+              <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
+              <span>SYNC</span>
+            </button>
           </div>
 
           {/* Admin Configuration settings button */}
@@ -1179,7 +1171,7 @@ export default function App() {
                     <span className="text-3xl text-emerald-600 block mb-2">🔓</span>
                     <h4 className="font-black text-sm text-slate-800 uppercase tracking-tight">Coordinators Access Required</h4>
                     <p className="text-[11px] text-slate-500 font-medium mt-1 leading-normal">
-                      Any viewer can view live walk tracking. To switch between live Google Sheets sync and manual simulator modes, please enter the coordinator passcode.
+                      Any viewer can view live walk tracking. To configure the source Google Sheet URL, please enter the coordinator passcode.
                     </p>
                   </div>
 
@@ -1209,180 +1201,22 @@ export default function App() {
               ) : (
                 /* ACTUAL SETTINGS PANEL FORM */
                 <form onSubmit={handleSaveAdminStats} className="p-6 overflow-y-auto max-h-[80vh] flex flex-col gap-4">
-                  {/* DATA STREAM TOGGLE MODE */}
-                  <div>
-                    <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-1.5">Stream Source selection</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setEditAdminMode(false)}
-                        className={`py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-tight transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
-                          !editAdminMode
-                            ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-xs animate-pulse-slow'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <span>📊 Google Sheets</span>
-                        <span className="text-[7.5px] lowercase font-semibold text-slate-400 leading-none">Auto CSV fetch</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setEditAdminMode(true)}
-                        className={`py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-tight transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
-                          editAdminMode
-                            ? 'bg-amber-50 border-amber-500 text-amber-805 shadow-xs'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
-                        }`}
-                      >
-                        <span>🎛️ Simulated Mode</span>
-                        <span className="text-[7.5px] lowercase font-semibold text-slate-400 leading-none">Manual tracker override</span>
-                      </button>
-                    </div>
-                  </div>
-
                   {/* GOOGLE SHEETS LIVE CONFIGURATION */}
-                  {!editAdminMode ? (
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col gap-2"
-                    >
-                      <div>
-                        <label className="block text-[9px] font-black uppercase tracking-wider text-emerald-800 mb-1">Google Sheet URL</label>
-                        <input
-                          type="url"
-                          placeholder="https://docs.google.com/spreadsheets/d/your-id-here"
-                          value={editSheetUrl}
-                          onChange={(e) => setEditSheetUrl(e.target.value)}
-                          className="w-full text-xs font-mono font-bold p-2.5 border border-emerald-250 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-                      <p className="text-[8.5px] text-slate-505 leading-normal font-bold">
-                        ⚠️ <span className="text-slate-800 font-extrabold text-[9px] uppercase">No login required</span>: Make the link sharing in Google Sheets <span className="text-emerald-700">"Anyone with the link can view" (Viewer)</span>, then paste the URL here. No API keys or Google accounts needed!
-                      </p>
-                    </motion.div>
-                  ) : (
-                    /* MANUAL COORDINATES CONTROL PARAMETERS */
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3 bg-amber-50/30 rounded-2xl border border-amber-100 flex flex-col gap-2.5"
-                    >
-                      {/* QUICK PRE-SET BUTTON COORDS */}
-                      <div>
-                        <span className="block text-[8.5px] font-black uppercase tracking-wider text-amber-800 mb-1">Simulation Pre-sets (Linear Track)</span>
-                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          <button
-                            type="button"
-                            onClick={setToStart}
-                            className="px-2 py-1 bg-white hover:bg-slate-50 text-[8px] font-black uppercase tracking-tighter border border-slate-200 rounded-lg cursor-pointer animate-fade-in"
-                          >
-                            🏡 start
-                          </button>
-                          <button
-                            type="button"
-                            onClick={setToPeak1}
-                            className="px-2 py-1 bg-white hover:bg-slate-50 text-[8px] font-black uppercase tracking-tighter border border-slate-200 rounded-lg cursor-pointer"
-                          >
-                            🏔️ peak 1
-                          </button>
-                          <button
-                            type="button"
-                            onClick={setToViaduct}
-                            className="px-2 py-1 bg-white hover:bg-slate-50 text-[8px] font-black uppercase tracking-tighter border border-slate-200 rounded-lg cursor-pointer"
-                          >
-                            🚂 viaduct
-                          </button>
-                          <button
-                            type="button"
-                            onClick={setToPeak2}
-                            className="px-2 py-1 bg-white hover:bg-slate-50 text-[8px] font-black uppercase tracking-tighter border border-slate-200 rounded-lg cursor-pointer"
-                          >
-                            ⛰️ peak 2
-                          </button>
-                          <button
-                            type="button"
-                            onClick={setToPeak3}
-                            className="px-2 py-1 bg-white hover:bg-slate-50 text-[8px] font-black uppercase tracking-tighter border border-slate-200 rounded-lg cursor-pointer"
-                          >
-                            🌋 peak 3
-                          </button>
-                          <button
-                            type="button"
-                            onClick={setToFinish}
-                            className="px-2 py-1 bg-white hover:bg-slate-50 text-[8px] font-black uppercase tracking-tighter border border-slate-200 rounded-lg cursor-pointer"
-                          >
-                            🏆 finish
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mb-2.5">
-                        <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Hike Walk Status (Trigger Celebration/Timer)</label>
-                        <select
-                          value={editWalkStatus}
-                          onChange={(e) => setEditWalkStatus(e.target.value)}
-                          className="w-full text-xs font-bold p-2.5 border border-slate-250 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500 font-sans cursor-pointer text-slate-800"
-                        >
-                          <option value="Idle">⏳ Idle (Ready at Basecamp)</option>
-                          <option value="Start">🟢 Start (Walking on Trail)</option>
-                          <option value="Finish">🏆 Finish (Celebration View) 🎉</option>
-                        </select>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Distance (Miles)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            max="24.0"
-                            min="0"
-                            value={editMiles}
-                            onChange={(e) => setEditMiles(Number(e.target.value))}
-                            className="w-full text-xs font-mono font-bold p-2 border border-slate-250 bg-white rounded-lg focus:ring-1 focus:ring-emerald-500"
-                          />
-                          <p className="text-[8px] font-semibold text-slate-400 mt-1">
-                            ≈ {Math.round(editMiles * 1609.344).toLocaleString()} meters
-                          </p>
-                        </div>
-                        <div>
-                          <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Steps Count</label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={editSteps}
-                            onChange={(e) => setEditSteps(parseInt(e.target.value, 10) || 0)}
-                            className="w-full text-xs font-mono font-bold p-2 border border-slate-250 bg-white rounded-lg focus:ring-1 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">GPS Lat</label>
-                          <input
-                            type="number"
-                            step="0.0001"
-                            value={editLat}
-                            onChange={(e) => setEditLat(Number(e.target.value))}
-                            className="w-full text-xs font-mono font-bold p-2 border border-slate-250 bg-white rounded-lg focus:ring-1 focus:ring-emerald-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">GPS Lng</label>
-                          <input
-                            type="number"
-                            step="0.0001"
-                            value={editLng}
-                            onChange={(e) => setEditLng(Number(e.target.value))}
-                            className="w-full text-xs font-mono font-bold p-2 border border-slate-250 bg-white rounded-lg focus:ring-1 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
+                  <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col gap-2">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase tracking-wider text-emerald-800 mb-1">Google Sheet URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://docs.google.com/spreadsheets/d/your-id-here"
+                        value={editSheetUrl}
+                        onChange={(e) => setEditSheetUrl(e.target.value)}
+                        className="w-full text-xs font-mono font-bold p-2.5 border border-emerald-250 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <p className="text-[8.5px] text-slate-550 leading-normal font-bold">
+                      ⚠️ <span className="text-slate-800 font-extrabold text-[9px] uppercase">No login required</span>: Make the link sharing in Google Sheets <span className="text-emerald-700">"Anyone with the link can view" (Viewer)</span>, then paste the URL here. No API keys or Google accounts needed!
+                    </p>
+                  </div>
 
                   <div className="flex gap-2.5 mt-2">
                     <button
@@ -1394,7 +1228,7 @@ export default function App() {
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
                     >
                       Save Configuration
                     </button>

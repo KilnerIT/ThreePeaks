@@ -97,7 +97,7 @@ const defaultDbState: DbState = {
   passwordRequired: true,
   appPassword: process.env.APP_PASSWORD || "peaks",
   stats: {
-    manualMode: true,
+    manualMode: false,
     manualMiles: 0.0,
     manualSteps: 0,
     manualProgress: 0,
@@ -107,7 +107,7 @@ const defaultDbState: DbState = {
     currentLat: 54.1488,
     currentLng: -2.2858,
     lastHaFetchSync: new Date().toISOString(),
-    lastHaFetchStatus: "Simulated Mode Active",
+    lastHaFetchStatus: "Google Sheet Active",
     sheetUrl: "https://docs.google.com/spreadsheets/d/1gOS1Lswdnn9naDDcSNlKlbFbgUBxKFgYzklo4GblQCc",
     visitorCount: 37,
     startTime: null,
@@ -150,12 +150,14 @@ function loadDb() {
         // Override password with latest environment variable if defined
         appPassword: process.env.APP_PASSWORD || parsed.appPassword || "peaks"
       };
+      db.stats.manualMode = false;
     } else {
       saveDb();
     }
   } catch (err) {
     console.error("Failed to load db.json, resetting to default database state:", err);
     db = { ...defaultDbState };
+    db.stats.manualMode = false;
     saveDb();
   }
 }
@@ -170,6 +172,7 @@ function saveDb() {
 }
 
 loadDb();
+syncWithGoogleSheet();
 
 // Distance helper (Haversine formula in miles)
 function getDistanceInMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
