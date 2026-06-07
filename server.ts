@@ -60,6 +60,7 @@ interface DbState {
     manualMiles: number;
     manualSteps: number;
     manualProgress: number;
+    manualMeters?: number;
     haGpsActive: boolean;
     haStepsActive: boolean;
     currentLat?: number;
@@ -78,6 +79,7 @@ interface DbState {
     miles: number;
     status: string;
     avatar: string;
+    meters?: number;
   }>;
   updates: Array<{
     id: string;
@@ -99,6 +101,7 @@ const defaultDbState: DbState = {
     manualMiles: 0.0,
     manualSteps: 0,
     manualProgress: 0,
+    manualMeters: 0,
     haGpsActive: false,
     haStepsActive: false,
     currentLat: 54.1488,
@@ -112,12 +115,12 @@ const defaultDbState: DbState = {
     walkStatus: "Pending"
   },
   walkers: [
-    { name: "Nick", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️" },
-    { name: "Gurch", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️" },
-    { name: "Wayne", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🥾" },
-    { name: "Louise", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♀️" },
-    { name: "Kira", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🎒" },
-    { name: "Connor", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🧗‍♂️" }
+    { name: "Nick", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️", meters: 0 },
+    { name: "Gurch", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️", meters: 0 },
+    { name: "Wayne", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🥾", meters: 0 },
+    { name: "Louise", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♀️", meters: 0 },
+    { name: "Kira", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🎒", meters: 0 },
+    { name: "Connor", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🧗‍♂️", meters: 0 }
   ],
   updates: [
     {
@@ -360,8 +363,15 @@ async function syncWithGoogleSheet() {
       statusIndex = headers.findIndex(h => h.includes("status"));
     }
 
+    // Dynamically locate "raw_meters" or general "meters" column heading
+    let metersIndex = headers.findIndex(h => h === "raw_meters" || h === "raw meters" || h === "meters" || h === "meter");
+    if (metersIndex === -1) {
+      metersIndex = headers.findIndex(h => h.includes("meters") || h.includes("meter"));
+    }
+
     let miles = NaN;
     let steps = NaN;
+    let meters = NaN;
     let timestamp = "";
     let matchedRowString = "";
 
@@ -381,6 +391,15 @@ async function syncWithGoogleSheet() {
       if (!isNaN(parsedMiles) && !isNaN(parsedSteps)) {
         miles = parsedMiles;
         steps = parsedSteps;
+
+        if (metersIndex > -1 && parts.length > metersIndex) {
+          const rawMetersValue = parts[metersIndex];
+          const parsedMeters = extractFloat(rawMetersValue);
+          if (!isNaN(parsedMeters)) {
+            meters = parsedMeters;
+          }
+        }
+
         timestamp = parts[timeIndex] || new Date().toISOString();
         matchedRowString = lines[i];
         break; // Successfully found the latest row with tracking stats
@@ -446,8 +465,10 @@ async function syncWithGoogleSheet() {
       }
     }
     
+    const finalMeters = !isNaN(meters) ? meters : Math.round(newMiles * 1609.344);
+
     // Provide gorgeous, highly detailed visual diagnostics output
-    db.stats.lastHaFetchStatus = `Synced successfully! Columns matched: miles ("${headers[milesIndex]}"), steps ("${headers[stepsIndex]}"), status ("${statusIndex > -1 ? headers[statusIndex] : "none"}"). Status: ${db.stats.walkStatus || "N/A"}. Latest data: Dist: ${newMiles} mi, Steps: ${steps.toLocaleString()}`;
+    db.stats.lastHaFetchStatus = `Synced successfully! Columns matched: miles ("${headers[milesIndex]}"), steps ("${headers[stepsIndex]}"), meters ("${metersIndex > -1 ? headers[metersIndex] : "derived"}"), status ("${statusIndex > -1 ? headers[statusIndex] : "none"}"). Status: ${db.stats.walkStatus || "N/A"}. Latest: ${newMiles} mi, ${finalMeters.toLocaleString()} m, ${steps.toLocaleString()} steps`;
 
     // Map stats to all walkers in sync since they tracking as a single group
     db.walkers = db.walkers.map((walker) => {
@@ -455,6 +476,7 @@ async function syncWithGoogleSheet() {
         ...walker,
         steps: steps,
         miles: newMiles,
+        meters: finalMeters,
         status: getStatusFromMiles(newMiles)
       };
     });
@@ -462,6 +484,7 @@ async function syncWithGoogleSheet() {
     // Mirror on manual modes in case toggle shifts
     db.stats.manualMiles = newMiles;
     db.stats.manualSteps = steps;
+    db.stats.manualMeters = finalMeters;
     db.stats.manualProgress = Math.min(100, Math.max(0, Math.round((newMiles / 24.0) * 100)));
 
     // Trigger milestone updates if team crosses any landmarks
@@ -522,6 +545,29 @@ setInterval(() => {
 
 // API ROUTES
 
+const activeViewersMap = new Map<string, number>();
+
+app.post("/api/heartbeat", (req, res) => {
+  const { clientId } = req.body;
+  if (clientId) {
+    activeViewersMap.set(clientId, Date.now());
+  }
+
+  // Prune any clients that have not checked in for > 20 seconds
+  const now = Date.now();
+  for (const [id, lastSeen] of activeViewersMap.entries()) {
+    if (now - lastSeen > 20000) {
+      activeViewersMap.delete(id);
+    }
+  }
+
+  res.json({
+    success: true,
+    activeViewers: Math.max(1, activeViewersMap.size),
+    visitorCount: db.stats.visitorCount || 37
+  });
+});
+
 app.post("/api/increment-visitors", (req, res) => {
   if (db.stats.visitorCount === undefined) {
     db.stats.visitorCount = 37;
@@ -543,9 +589,22 @@ app.post("/api/login", (req, res) => {
 
 // Get overall stats
 app.get("/api/data", (req, res) => {
+  // Prune old heartbeat clients
+  const now = Date.now();
+  for (const [id, lastSeen] of activeViewersMap.entries()) {
+    if (now - lastSeen > 20000) {
+      activeViewersMap.delete(id);
+    }
+  }
+
+  const activeCount = Math.max(1, activeViewersMap.size);
+
   res.json({
     passwordRequired: db.passwordRequired,
-    stats: db.stats,
+    stats: {
+      ...db.stats,
+      activeViewers: activeCount
+    },
     walkers: db.walkers,
     updates: db.updates
   });
@@ -593,6 +652,7 @@ app.post("/api/update/stats", (req, res) => {
   if (db.stats.manualMode) {
     if (manualMiles !== undefined) {
       db.stats.manualMiles = parseFloat(Number(manualMiles).toFixed(2));
+      db.stats.manualMeters = Math.round(Number(manualMiles) * 1609.344);
     }
     if (manualSteps !== undefined) {
       db.stats.manualSteps = parseInt(manualSteps, 10);
@@ -607,6 +667,7 @@ app.post("/api/update/stats", (req, res) => {
 
     const baseMiles = manualMiles !== undefined ? Number(manualMiles) : db.stats.manualMiles;
     const baseSteps = manualSteps !== undefined ? parseInt(manualSteps, 10) : db.stats.manualSteps;
+    const baseMeters = Math.round(baseMiles * 1609.344);
 
     // Assign same stats to all walkers since we track as a single group
     db.walkers = db.walkers.map((walker) => {
@@ -614,6 +675,7 @@ app.post("/api/update/stats", (req, res) => {
         ...walker,
         steps: baseSteps,
         miles: baseMiles,
+        meters: baseMeters,
         status: walkerUpdates?.[walker.name]?.status || getStatusFromMiles(baseMiles)
       };
     });
@@ -636,6 +698,7 @@ app.post("/api/update/walker", (req, res) => {
     const updatedSteps = steps !== undefined ? parseInt(steps, 15) : db.walkers[walkerIdx].steps;
     const updatedMiles = miles !== undefined ? parseFloat(Number(miles).toFixed(2)) : db.walkers[walkerIdx].miles;
     const updatedStatus = status !== undefined ? status : db.walkers[walkerIdx].status;
+    const updatedMeters = req.body.meters !== undefined ? parseInt(req.body.meters, 10) : Math.round(updatedMiles * 1609.344);
 
     // Since walkers walk as a single group, synchronize everyone to the updated statistics!
     db.walkers = db.walkers.map((walker) => {
@@ -643,6 +706,7 @@ app.post("/api/update/walker", (req, res) => {
         ...walker,
         steps: updatedSteps,
         miles: updatedMiles,
+        meters: updatedMeters,
         status: updatedStatus,
         avatar: walker.name === name && avatar !== undefined ? avatar : walker.avatar
       };
@@ -651,6 +715,7 @@ app.post("/api/update/walker", (req, res) => {
     if (db.stats.manualMode) {
       db.stats.manualSteps = updatedSteps;
       db.stats.manualMiles = updatedMiles;
+      db.stats.manualMeters = updatedMeters;
       db.stats.manualProgress = Math.min(100, Math.max(0, Math.round((updatedMiles / 24.0) * 100)));
     }
 

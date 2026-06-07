@@ -9,6 +9,7 @@ export interface Walker {
   miles: number;
   status: string; // e.g. "Walking", "Resting", "Summited Peak 1", "Finished"
   avatar: string; // emoji or design style
+  meters?: number;
 }
 
 export interface Coordinate {
@@ -31,6 +32,7 @@ export interface AppStats {
   manualMiles: number;
   manualSteps: number;
   manualProgress: number; // 0 - 100
+  manualMeters?: number;
   haGpsActive: boolean;
   haStepsActive: boolean;
   currentLat?: number;
@@ -39,6 +41,7 @@ export interface AppStats {
   lastHaFetchStatus?: string;
   sheetUrl?: string;
   visitorCount?: number;
+  activeViewers?: number;
   startTime?: string | null;
   finishTime?: string | null;
   walkStatus?: string; // 'Pending' | 'Start' | 'Finish'

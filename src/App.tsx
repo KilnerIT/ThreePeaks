@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, FormEvent, DragEvent, ChangeEvent } from "react";
+import React, { useState, useEffect, useRef, FormEvent, DragEvent, ChangeEvent, useMemo } from "react";
 import {
   Compass,
   MapPin,
@@ -100,8 +100,63 @@ export default function App() {
   const [editSheetUrl, setEditSheetUrl] = useState<string>("");
   const [editWalkStatus, setEditWalkStatus] = useState<string>("Pending");
 
-  // Timer reference state
+  // Timer reference states
   const [liveNow, setLiveNow] = useState<Date>(new Date());
+  const [countdown, setCountdown] = useState<number>(20);
+  const [localTime, setLocalTime] = useState<string>("");
+
+  useEffect(() => {
+    const updateLocalClock = () => {
+      const now = new Date();
+      setLocalTime(now.toLocaleTimeString("en-US", { hour: "numeric", minute: "numeric", second: "numeric", hour12: true }));
+    };
+    updateLocalClock();
+    const clockInterval = setInterval(updateLocalClock, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
+
+  // Generate or retrieve a unique tab/session client ID for heartbeat
+  const clientId = useMemo(() => {
+    let id = sessionStorage.getItem("peaks_viewer_session_id");
+    if (!id) {
+      id = Math.random().toString(36).substring(2, 11);
+      sessionStorage.setItem("peaks_viewer_session_id", id);
+    }
+    return id;
+  }, []);
+
+  // Heartbeat endpoint registration for real-time active viewers tracking
+  useEffect(() => {
+    const sendHeartbeat = () => {
+      fetch("/api/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      }).catch((err) => console.error("Heartbeat sync failed:", err));
+    };
+
+    // Send immediately on mount
+    sendHeartbeat();
+
+    // Loop heartbeat every 8 seconds (to match server threshold of 20 seconds)
+    const interval = setInterval(sendHeartbeat, 8000);
+    return () => clearInterval(interval);
+  }, [clientId]);
+
+  // Visual countdown timer ticker for live board auto-refresh
+  useEffect(() => {
+    const clock = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          fetchData();
+          return 20; // reset to 20
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(clock);
+  }, []);
 
   // Increment page view count once per unique browser session
   useEffect(() => {
@@ -119,12 +174,6 @@ export default function App() {
   // Check initial authentication
   useEffect(() => {
     fetchData();
-  }, []);
-
-  // Periodic polling for live tracker updates
-  useEffect(() => {
-    const interval = setInterval(fetchData, 8000); // Poll every 8 seconds
-    return () => clearInterval(interval);
   }, []);
 
   // Continuous timer ticker while walk is active
@@ -148,6 +197,7 @@ export default function App() {
       if (response.ok) {
         const data: DbState = await response.json();
         setDbData(data);
+        setCountdown(20); // Reset timer countdown
         // Initialize admin settings from response once loaded
         if (data && data.stats) {
           setEditAdminMode(data.stats.manualMode);
@@ -409,6 +459,7 @@ export default function App() {
 
   // Calculated aggregate figures
   const totalMiles = stats.manualMode ? stats.manualMiles : (walkers[0]?.miles || 0);
+  const totalMeters = stats.manualMode ? (stats.manualMeters || Math.round(stats.manualMiles * 1609.344)) : (walkers[0]?.meters || Math.round((walkers[0]?.miles || 0) * 1609.344));
   const progressPercent = Math.min(100, Math.max(0, Math.round((totalMiles / 24) * 100)));
   const totalSteps = walkers.reduce((acc, curr) => acc + curr.steps, 0);
   const averageSteps = walkers.length > 0 ? Math.round(totalSteps / walkers.length) : 0;
@@ -486,13 +537,38 @@ export default function App() {
 
         {/* Google Sheets Status & Lock Button */}
         <div className="flex flex-wrap gap-2 items-center justify-center">
-          {/* Live Visitor/Viewer Count Badge */}
-          <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2">
-            <span className="text-xs">👁️</span>
+          {/* Live Clock Badge in Title Bar */}
+          <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2" title="Current Yorks Local Time Feed">
+            <span className="text-xs">🕒</span>
             <div className="text-left font-sans">
-              <span className="block text-[8px] font-black text-white/50 uppercase tracking-widest leading-none">Total Views</span>
+              <span className="block text-[8px] font-black text-white/50 uppercase tracking-widest leading-none">Local Time</span>
+              <span className="text-[10px] font-extrabold text-[#38bdf8] font-mono whitespace-nowrap">
+                {localTime || "Retrieving..."}
+              </span>
+            </div>
+          </div>
+
+          {/* Real-time Online Active Viewers Badge */}
+          <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+            </span>
+            <div className="text-left font-sans">
+              <span className="block text-[8px] font-black text-white/50 uppercase tracking-widest leading-none">Online Now</span>
               <span className="text-[10px] font-extrabold text-emerald-300 font-mono">
-                {visitorCount} visitors
+                {dbData?.stats?.activeViewers ?? 1} live
+              </span>
+            </div>
+          </div>
+
+          {/* Auto Refresh Sync Countdown Badge */}
+          <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2" title="Dashboard next automatic data sync background fetch">
+            <span className="text-xs text-amber-300">⏳</span>
+            <div className="text-left font-sans">
+              <span className="block text-[8px] font-black text-white/50 uppercase tracking-widest leading-none">Auto-Sync</span>
+              <span className="text-[10px] font-extrabold text-amber-300 font-mono">
+                {countdown}s
               </span>
             </div>
           </div>
@@ -533,6 +609,27 @@ export default function App() {
         </div>
       </header>
 
+      {/* SQUAD MEMBERS ROSTER STRIP - BELOW TITLE BAR */}
+      <div className="w-full bg-[#1b431e]/95 backdrop-blur-sm px-4 md:px-8 py-2 text-center flex flex-col min-[600px]:flex-row items-center justify-center gap-1.5 min-[600px]:gap-2.5 relative z-25 border-b-2 border-emerald-800 shadow-lg">
+        <span className="text-xs shrink-0">🥾</span>
+        <div className="flex items-center gap-1 text-[11px] font-bold tracking-wider text-emerald-200 uppercase font-sans select-none">
+          SQUAD MEMBERS:
+        </div>
+        <div className="text-xs font-black tracking-wide text-white font-sans flex items-center gap-2 flex-wrap justify-center">
+          <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🏃‍♂️ Nick</span>
+          <span className="text-emerald-600/60">•</span>
+          <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🏃‍♂️ Gurch</span>
+          <span className="text-emerald-600/60">•</span>
+          <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🥾 Wayne</span>
+          <span className="text-emerald-600/60">•</span>
+          <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🏃‍♀️ Louise</span>
+          <span className="text-emerald-600/60">•</span>
+          <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🎒 Kira</span>
+          <span className="text-emerald-600/60">•</span>
+          <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🧗‍♂️ Conner</span>
+        </div>
+      </div>
+
       {/* TOP NOTIFICATION ERROR BAR IF ANY */}
       {error && (
         <div className="mx-4 md:mx-12 mt-4 bg-rose-100 border-3 border-rose-500 text-rose-800 px-6 py-4 rounded-2xl flex items-center gap-3 shadow-xl z-25 relative animate-shake">
@@ -544,14 +641,11 @@ export default function App() {
         </div>
       )}
 
-      {/* WEATHER BAR - SIT BELOW TITLE AND TAKE FULL SCREEN WIDTH */}
-      <div className="relative z-20 px-4 md:px-8 mt-3 animate-fade-in">
-        <WeatherWidget />
-      </div>
-
-      {/* DYNAMIC TIME CHRONO HEADLINE CARD */}
-      <div className="relative z-20 px-4 md:px-8 mt-3 animate-fade-in">
-        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-[#1e3a1e] text-white rounded-2xl p-4 md:p-5 shadow-xl border-2 border-emerald-700/80 flex flex-col md:flex-row items-center justify-between gap-4">
+      {/* SIDE-BY-SIDE: ELAPSED TREKKING CHRONO & WEATHER FORECAST */}
+      <div className="relative z-20 px-4 md:px-8 mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4 animate-fade-in items-stretch">
+        
+        {/* ELAPSED TIME TRACKING CARD */}
+        <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-[#1e3a1e] text-white rounded-2xl p-4 shadow-xl border-2 border-emerald-700/80 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl bg-emerald-900 shadow-inner border border-emerald-700 shrink-0 ${walkStatus === 'Start' ? 'animate-pulse' : ''}`}>
               {walkStatus === "Finish" ? "🏆" : "⏱️"}
@@ -563,29 +657,35 @@ export default function App() {
                 }`}>
                   {walkStatus === "Finish" ? "🟢 HIKE CONQUERED" : walkStatus === "Start" ? "🟢 WALKING IN PROGRESS" : "⏳ READY AT BASECAMP"}
                 </span>
-                <span className="text-[9.5px] font-mono text-emerald-400 font-extrabold uppercase">
+                <span className="text-[9.5px] font-mono text-emerald-400 font-extrabold uppercase font-black">
                   {startTime ? `Departure: ${new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : "Awaiting Sheet Status"}
                 </span>
               </div>
-              <h3 className="text-base md:text-lg font-black uppercase tracking-tight mt-1 text-white flex items-center gap-2">
-                ⏱️ Elapsed Trekking Duration
+              <h3 className="text-base font-black uppercase tracking-tight mt-1 text-white flex items-center gap-2">
+                Elapsed Trekking Duration
               </h3>
-              <p className="text-[10px] text-slate-300 opacity-90">
+              <p className="text-[10px] text-slate-300 opacity-90 mt-0.5">
                 {walkStatus === "Finish" 
-                  ? "Congratulations! The peaks have been conquered and the tracking timer is frozen."
-                  : "Calculating elapsed time dynamically between sheets 'Start' status trigger and current live tick."}
+                  ? "Congratulations! The peaks have been conquered and timer is frozen."
+                  : "Calculating elapsed time dynamically between 'Start' status trigger and current live tick."}
               </p>
             </div>
           </div>
 
           {/* TIMER CHRONO TICKER */}
-          <div className="bg-black/40 border border-slate-700/40 px-5 py-2.5 rounded-xl text-center shrink-0 w-full md:w-auto min-w-[190px]">
+          <div className="bg-black/40 border border-slate-700/40 px-4 py-2 rounded-xl text-center shrink-0 w-full sm:w-auto min-w-[150px]">
             <span className="block text-[7px] font-black uppercase tracking-widest text-[#4ade80] mb-0.5 font-sans">CHRONOMETER ELAPSED</span>
-            <span className="font-mono text-xl md:text-2xl font-extrabold text-white tracking-widest drop-shadow-[0_1.5px_3px_rgba(0,0,0,0.6)] tabular-nums block animate-fade-in">
+            <span className="font-mono text-xl sm:text-2xl font-extrabold text-white tracking-widest drop-shadow-[0_1.5px_3px_rgba(0,0,0,0.6)] tabular-nums block animate-fade-in">
               {getElapsedTimeString()}
             </span>
           </div>
         </div>
+
+        {/* SHRUNK WEATHER WIDGET SITTING SIDE-BY-SIDE */}
+        <div className="w-full">
+          <WeatherWidget />
+        </div>
+
       </div>
 
       {walkStatus === "Finish" ? (
@@ -664,9 +764,9 @@ export default function App() {
               >
                 <span className="block text-[8px] font-black uppercase tracking-widest text-indigo-400 font-sans">Total Distance</span>
                 <span className="block text-xl md:text-2xl font-mono font-black text-white mt-1">
-                  24.0 mi
+                  {totalMiles.toFixed(1)} mi
                 </span>
-                <span className="block text-[9.5px] text-slate-400 mt-1 font-sans">100% course completed</span>
+                <span className="block text-[9.5px] text-slate-400 mt-1 font-sans">({totalMeters.toLocaleString()}m completed)</span>
               </motion.div>
             </div>
 
@@ -740,9 +840,12 @@ export default function App() {
             <span className="text-orange-500 text-3xl p-1.5 bg-orange-50 rounded-xl border border-orange-200">🏔️</span>
             <div className="text-right">
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Walking Distance</p>
-              <h2 className="text-3xl md:text-4xl font-black text-slate-800 tracking-tight mt-1 font-mono">
-                {totalMiles.toFixed(1)} <span className="text-base font-bold text-slate-500">mi</span>
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight mt-1 font-mono">
+                {totalMiles.toFixed(1)} <span className="text-sm font-bold text-slate-500 uppercase">mi</span>
               </h2>
+              <p className="text-[11px] font-black text-indigo-650 font-mono mt-0.5" title="Meters parsed from Google Sheet raw_meters column">
+                {totalMeters.toLocaleString()} <span className="text-[8.5px] text-indigo-400 uppercase font-bold">m</span>
+              </p>
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold">
@@ -1240,6 +1343,9 @@ export default function App() {
                             onChange={(e) => setEditMiles(Number(e.target.value))}
                             className="w-full text-xs font-mono font-bold p-2 border border-slate-250 bg-white rounded-lg focus:ring-1 focus:ring-emerald-500"
                           />
+                          <p className="text-[8px] font-semibold text-slate-400 mt-1">
+                            ≈ {Math.round(editMiles * 1609.344).toLocaleString()} meters
+                          </p>
                         </div>
                         <div>
                           <label className="block text-[8.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Steps Count</label>
