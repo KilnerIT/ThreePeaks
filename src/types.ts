@@ -45,6 +45,7 @@ export interface AppStats {
   startTime?: string | null;
   finishTime?: string | null;
   walkStatus?: string; // 'Pending' | 'Start' | 'Finish'
+  googleAccessToken?: string | null;
 }
 
 export interface DbState {

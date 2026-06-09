@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from "motion/react";
 import WeatherWidget from "./components/WeatherWidget";
 import MessagingPlatform from "./components/MessagingPlatform";
 import { DbState, Walker, LiveUpdate } from "./types";
+import { initAuth, googleSignIn, logout } from "./lib/firebase";
 
 interface ElevationPoint {
   miles: number;
@@ -219,12 +220,82 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
   const [routeTab, setRouteTab] = useState<'elevation' | 'map'>('elevation');
+  const [showBrief, setShowBrief] = useState<boolean>(() => {
+    const saved = localStorage.getItem("show_event_briefing");
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("show_event_briefing", JSON.stringify(showBrief));
+  }, [showBrief]);
+
   const [adminOpen, setAdminOpen] = useState<boolean>(false);
-  const [authorized, setAuthorized] = useState<boolean>(false);
+  const [authorized, setAuthorized] = useState<boolean>(true);
   const [passcode, setPasscode] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Google sign in states for write-back access
+  const [googleUser, setGoogleUser] = useState<any>(null);
+
+  // Monitor Google Sign-In status and post the sheets access token back to coordination server
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      async (user, token) => {
+        setGoogleUser(user);
+        try {
+          await fetch("/api/admin/save-token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accessToken: token })
+          });
+        } catch (err) {
+          console.error("Failed to sync access token to coordination server:", err);
+        }
+      },
+      () => {
+        setGoogleUser(null);
+      }
+    );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        setGoogleUser(result.user);
+        await fetch("/api/admin/save-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accessToken: result.accessToken })
+        });
+      }
+    } catch (err: any) {
+      if (err?.code === "auth/popup-closed-by-user") {
+        console.warn("Google Sign-In popup closed by user, login cancelled.");
+      } else {
+        console.error("Google Sign-In failed:", err);
+      }
+    }
+  };
+
+  const handleGoogleSignOut = async () => {
+    try {
+      await logout();
+      setGoogleUser(null);
+      await fetch("/api/admin/save-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: "" })
+      });
+    } catch (err) {
+      console.error("Google Sign-Out failed:", err);
+    }
+  };
 
   // Form states for creating a new update/photo post
   const [newAuthor, setNewAuthor] = useState<string>("Nick");
@@ -246,10 +317,16 @@ export default function App() {
   const [countdown, setCountdown] = useState<number>(20);
   const [localTime, setLocalTime] = useState<string>("");
 
+  const isEventDayOrLater = useMemo(() => {
+    const cutoff = new Date("2026-06-13T00:00:00");
+    return liveNow.getTime() >= cutoff.getTime();
+  }, [liveNow]);
+
   useEffect(() => {
     const updateLocalClock = () => {
       const now = new Date();
       setLocalTime(now.toLocaleTimeString("en-US", { hour: "numeric", minute: "numeric", second: "numeric", hour12: true }));
+      setLiveNow(now);
     };
     updateLocalClock();
     const clockInterval = setInterval(updateLocalClock, 1000);
@@ -303,14 +380,18 @@ export default function App() {
   useEffect(() => {
     const isCounted = sessionStorage.getItem("peaks_visitor_counted");
     if (!isCounted) {
-      fetch("/api/increment-visitors", { method: "POST" })
+      fetch("/api/increment-visitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: clientId })
+      })
         .then(() => {
           sessionStorage.setItem("peaks_visitor_counted", "true");
           fetchData();
         })
         .catch(err => console.error("Error logging visitor count:", err));
     }
-  }, []);
+  }, [clientId]);
 
   // Check initial authentication
   useEffect(() => {
@@ -363,7 +444,6 @@ export default function App() {
 
   // Instant sync with Google Sheet
   const handleForceSync = async () => {
-    if (dbData?.stats.manualMode) return;
     setSyncing(true);
     try {
       const response = await fetch("/api/sync", { method: "POST" });
@@ -385,8 +465,13 @@ export default function App() {
     e.preventDefault();
     try {
       const payload = {
-        manualMode: false,
+        manualMode: editAdminMode,
         sheetUrl: editSheetUrl,
+        manualMiles: editMiles,
+        manualSteps: editSteps,
+        currentLat: editLat,
+        currentLng: editLng,
+        walkStatus: editWalkStatus,
       };
 
       const response = await fetch("/api/update/stats", {
@@ -514,6 +599,21 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Clear all live updates
+  const handleClearUpdatesFeed = async () => {
+    if (!confirm("Are you sure you want to permanently clear the ENTIRE Live Updates Feed?")) return;
+    try {
+      const response = await fetch("/api/updates/clear", {
+        method: "POST",
+      });
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (err) {
+      console.error("Failed to clear updates feed:", err);
     }
   };
 
@@ -708,21 +808,32 @@ export default function App() {
             </div>
           </div>
 
-          {/* Google Sheets API Status Indicator */}
+           {/* Google Sheets API or MANUAL SIMULATOR Status Indicator */}
           <div className="bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/15 text-center flex items-center gap-2">
-            <div className="text-left">
+            <div className="text-left font-sans">
               <span className="block text-[8px] font-black text-white/70 uppercase tracking-widest leading-none">Data Stream</span>
-              <span className="text-[10px] font-black flex items-center gap-1 text-emerald-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                GOOGLE SHEETS API
-              </span>
+              {dbData?.stats?.manualMode ? (
+                <span className="text-[10px] font-black flex items-center gap-1 text-amber-300" title="Manual Simulation mode active. Click SYNC to restore Google Sheet sync.">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  SIMULATOR ACTIVE
+                </span>
+              ) : (
+                <span className="text-[10px] font-black flex items-center gap-1 text-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  GOOGLE SHEETS API
+                </span>
+              )}
             </div>
             <button
               id="force-sync-btn"
               onClick={handleForceSync}
               disabled={syncing}
-              title="Force refresh Google Sheet steps and miles"
-              className="p-1 px-1.5 bg-emerald-500 hover:bg-emerald-600 font-extrabold text-[9px] text-white rounded-lg transition-all flex items-center gap-0.5 shadow-sm active:scale-95 cursor-pointer"
+              title={dbData?.stats?.manualMode ? "Toggle off Simulated mode & pull latest Sheet data" : "Force refresh Google Sheet steps and miles"}
+              className={`p-1 px-1.5 font-extrabold text-[9px] text-white rounded-lg transition-all flex items-center gap-0.5 shadow-sm active:scale-95 cursor-pointer ${
+                dbData?.stats?.manualMode
+                  ? 'bg-amber-500 hover:bg-amber-600'
+                  : 'bg-emerald-500 hover:bg-emerald-600'
+              }`}
             >
               <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
               <span>SYNC</span>
@@ -743,7 +854,7 @@ export default function App() {
       </header>
 
       {/* SQUAD MEMBERS ROSTER STRIP - BELOW TITLE BAR */}
-      <div className="w-full bg-[#1b431e]/95 backdrop-blur-sm px-4 md:px-8 py-2 text-center flex flex-col min-[600px]:flex-row items-center justify-center gap-1.5 min-[600px]:gap-2.5 relative z-25 border-b-2 border-emerald-800 shadow-lg">
+      <div className="w-full bg-[#1b431e]/95 backdrop-blur-sm px-4 md:px-8 py-2 text-center flex flex-col min-[1000px]:flex-row items-center justify-center gap-1.5 min-[1000px]:gap-2.5 relative z-25 border-b-2 border-emerald-800 shadow-lg">
         <span className="text-xs shrink-0">🥾</span>
         <div className="flex items-center gap-1 text-[11px] font-bold tracking-wider text-emerald-200 uppercase font-sans select-none">
           SQUAD MEMBERS:
@@ -761,7 +872,177 @@ export default function App() {
           <span className="text-emerald-600/60">•</span>
           <span className="bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-700/50 shadow-inner flex items-center gap-1">🧗‍♂️ Conner</span>
         </div>
+
+        {/* Dynamic Event Brief & Countdown toggle slider/switch */}
+        {!isEventDayOrLater && (
+          <div className="flex items-center gap-2 bg-emerald-950/50 px-3 py-1 rounded-full border border-emerald-700/50 min-[1000px]:ml-auto mr-0 text-white shadow-inner select-none font-sans">
+            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-200 leading-none">
+              Brief & Countdown
+            </span>
+            <button
+              id="slider-toggle-brief"
+              type="button"
+              onClick={() => setShowBrief(!showBrief)}
+              className={`relative w-8 h-4.5 rounded-full transition-colors duration-200 focus:outline-none cursor-pointer ${
+                showBrief ? "bg-amber-400" : "bg-slate-600"
+              }`}
+              aria-label="Toggle Event Briefing"
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 transform ${
+                  showBrief ? "translate-x-3.5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* COLLAPSED / EXPANDED BRIEFING & COUNTDOWN CARDS MODULE */}
+      <AnimatePresence initial={false}>
+        {showBrief && !isEventDayOrLater && (
+          <motion.div
+            key="event-briefing-collapsible-wrapper"
+            initial={{ height: 0, opacity: 0, scaleY: 0.95 }}
+            animate={{ height: "auto", opacity: 1, scaleY: 1 }}
+            exit={{ height: 0, opacity: 0, scaleY: 0.95 }}
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+            className="overflow-hidden relative z-20"
+          >
+            <div className="w-full">
+              <div className="relative bg-slate-900 border-b-4 border-emerald-700 shadow-2xl overflow-hidden px-4 md:px-8 py-6 md:py-8 text-white flex flex-col justify-between">
+                {/* Parallax background color bleed */}
+                <div className="absolute inset-0 bg-gradient-to-br from-[#112F12]/95 via-slate-950 to-[#0C240E]/95 pointer-events-none z-0" />
+                
+                {/* Visual mountain wireframe trace background for an alpine vector vibe */}
+                <div className="absolute bottom-0 right-0 left-0 h-40 opacity-15 pointer-events-none z-0">
+                  <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <polygon points="0,100 25,24 45,78 68,14 100,100" fill="none" stroke="#10b981" strokeWidth="0.75" />
+                  </svg>
+                </div>
+
+                <div className="relative z-10 flex flex-col justify-between h-full flex-1 gap-4">
+                  {/* Event Title Badge Header */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-white/10 text-left">
+                    <div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 font-sans">📅 PEAK CO-ORDINATORS BRIEF</span>
+                      <h4 className="text-lg md:text-xl font-black uppercase tracking-tight text-white mt-1 font-sans">Yorkshire 3 Peaks Challenge</h4>
+                    </div>
+                    <div className="bg-emerald-600/20 px-3.5 py-1 rounded-xl border border-emerald-500/20 text-center shrink-0">
+                      <p className="text-[8px] font-black uppercase text-emerald-400 tracking-widest leading-none font-sans">TIME ALLOCATION</p>
+                      <p className="text-xs font-black text-white font-mono mt-1">12 HOURS UNDER-12 CLUB</p>
+                    </div>
+                  </div>
+
+                  {/* Date briefing & live Countdown Ticker */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
+                    <div className="md:col-span-7 flex flex-col justify-between text-left gap-3">
+                      <div className="bg-emerald-950/70 border-2 border-emerald-600/60 p-4 rounded-2xl shadow-inner relative overflow-hidden backdrop-blur-xs flex-1">
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block font-sans">CHALLENGE LAUNCH BILLING</span>
+                        <h3 className="text-base md:text-lg font-black uppercase tracking-tight text-white mt-1.5 flex items-center gap-1.5 font-sans">
+                          <span className="text-xl">🗓️</span>
+                          Saturday 13th June • 7:00 AM
+                        </h3>
+                        <p className="text-[10px] text-emerald-100 mt-2 font-medium leading-relaxed font-sans">
+                          The official squad trekking timer kicks off from basecamp **Horton-in-Ribblesdale** at precisely 07:00 AM. Key checkpoint milestones (Pen-y-ghent, Ribblehead, Whernside, and Ingleborough) are logged in real-time.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 shrink-0">
+                        <div className="bg-slate-800/60 p-2 rounded-xl border border-white/5 text-center font-sans">
+                          <span className="text-sm">🥾🏃</span>
+                          <span className="block text-[7.5px] font-black text-slate-400 uppercase mt-1">LOOP LENGTH</span>
+                          <span className="block text-[10.5px] font-bold text-white font-mono">24.0 MILES</span>
+                        </div>
+                        <div className="bg-slate-800/60 p-2 rounded-xl border border-white/5 text-center font-sans">
+                          <span className="text-sm">⛰️🧗</span>
+                          <span className="block text-[7.5px] font-black text-slate-400 uppercase mt-1">ASCENT METRES</span>
+                          <span className="block text-[10.5px] font-bold text-white font-mono">1,585 M</span>
+                        </div>
+                        <div className="bg-slate-800/60 p-2 rounded-xl border border-white/5 text-center font-sans">
+                          <span className="text-sm">🏆🥇</span>
+                          <span className="block text-[7.5px] font-black text-slate-400 uppercase mt-1">SUMMIT CLIMBS</span>
+                          <span className="block text-[10.5px] font-bold text-white font-mono">3 PEAKS</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-5 flex flex-col items-center justify-center">
+                      {/* DIGIT COUNTDOWN TIMER BOARD */}
+                      <div className="w-full bg-black/40 border-2 border-amber-500/40 p-4 rounded-2xl text-center shadow-xl backdrop-blur-xs flex flex-col justify-center h-full">
+                        <span className="inline-block text-[8px] font-black uppercase tracking-widest text-amber-400 font-sans px-2.5 py-0.5 rounded-full bg-amber-400/10 mb-2 border border-amber-400/20 mx-auto">
+                          ⏱️ EVENT LAUNCH COUNTDOWN
+                        </span>
+                        
+                        {(() => {
+                           const targetDate = new Date("2026-06-13T07:00:00");
+                           const diffMs = targetDate.getTime() - liveNow.getTime();
+                           if (diffMs <= 0 || walkStatus === "Start") {
+                             return (
+                               <div className="py-4 font-sans">
+                                 <span className="block text-base font-black text-[#4ade80] uppercase tracking-wider animate-pulse">
+                                   🚀 WALK IS LIVE!
+                                 </span>
+                                 <span className="block text-[9.5px] text-slate-300 mt-1.5 font-bold leading-normal">
+                                   Trekking timer is humming on the trail profile chart! GPS tracking is active.
+                                 </span>
+                               </div>
+                             );
+                           }
+
+                           const d = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                           const h = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                           const m = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                           const s = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+                           return (
+                             <div className="grid grid-cols-4 gap-1 mt-2.5 font-mono">
+                               <div className="bg-slate-900 border border-slate-800 p-2 rounded-lg">
+                                 <span className="block text-lg font-black text-white leading-none">{d}</span>
+                                 <span className="text-[7.5px] font-bold uppercase text-slate-400 tracking-wider">days</span>
+                               </div>
+                               <div className="bg-slate-900 border border-slate-800 p-2 rounded-lg">
+                                 <span className="block text-lg font-black text-white leading-none">{h.toString().padStart(2, "0")}</span>
+                                 <span className="text-[7.5px] font-bold uppercase text-slate-400 tracking-wider">hours</span>
+                               </div>
+                               <div className="bg-slate-900 border border-slate-800 p-2 rounded-lg">
+                                 <span className="block text-lg font-black text-white leading-none">{m.toString().padStart(2, "0")}</span>
+                                 <span className="text-[7.5px] font-bold uppercase text-slate-400 tracking-wider">mins</span>
+                               </div>
+                               <div className="bg-slate-900 border border-slate-800 p-2 rounded-lg">
+                                 <span className="block text-lg font-black text-amber-400 leading-none animate-pulse">{s.toString().padStart(2, "0")}</span>
+                                 <span className="text-[7.5px] font-bold uppercase text-slate-400 tracking-wider">secs</span>
+                               </div>
+                             </div>
+                           );
+                        })()}
+
+                        <p className="text-[7.5px] text-slate-500 font-bold mt-2.5 tracking-wider italic font-sans">
+                          live automatic ticker referencing basecamp local clock
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer tips and action jump triggers */}
+                  <div className="mt-2 pt-3 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <p className="text-[9px] text-slate-400 font-bold max-w-sm text-left leading-normal font-sans">
+                      💡 <span className="text-slate-300 uppercase font-black text-[8px]">Hiker Tip:</span> Use the **Elevation Profile** or **2D Live Trail Map** tabs above to explore slopes and physical coordinates of the peaks course ahead of time!
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setRouteTab('map')}
+                      className="w-full sm:w-auto px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md hover:scale-[1.01] active:scale-99 duration-150 cursor-pointer shrink-0 font-sans"
+                    >
+                      🗺️ Explore Interactive Map
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* TOP NOTIFICATION ERROR BAR IF ANY */}
       {error && (
@@ -1049,22 +1330,22 @@ export default function App() {
         {/* Left Hand: Hiker Elevation Trail Path Map (lg:col-span-8) */}
         <div className="lg:col-span-8 flex flex-col">
           {/* TAB CONTROL WITH MODERN OUTDOOR BADGING */}
-          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-205 mb-3 max-w-sm self-start shadow-xs">
+          <div className="flex flex-wrap bg-slate-100 p-1 rounded-2xl border border-slate-200 mb-3 max-w-sm self-start shadow-xs gap-1">
             <button
               id="view-tab-elevation"
               onClick={() => setRouteTab('elevation')}
-              className={`flex items-center gap-1.5 px-4.5 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                 routeTab === 'elevation'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              🏔️ ELEVATION CHART
+              🏔️ ELEVATION PROFILE
             </button>
             <button
               id="view-tab-map"
               onClick={() => setRouteTab('map')}
-              className={`flex items-center gap-1.5 px-4.5 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                 routeTab === 'map'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-500 hover:text-slate-800'
@@ -1791,7 +2072,7 @@ export default function App() {
                     <label className="block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-1">Passcode</label>
                     <input
                       type="password"
-                      placeholder="Enter administrator passcode (e.g. LetMeIn)"
+                      placeholder="Enter administrator passcode"
                       value={passcode}
                       onChange={(e) => setPasscode(e.target.value)}
                       className="w-full text-xs font-bold font-mono p-2.5 border border-slate-250 bg-slate-50 rounded-xl outline-hidden focus:ring-2 focus:ring-emerald-500"
@@ -1812,22 +2093,245 @@ export default function App() {
                 </form>
               ) : (
                 /* ACTUAL SETTINGS PANEL FORM */
-                <form onSubmit={handleSaveAdminStats} className="p-6 overflow-y-auto max-h-[80vh] flex flex-col gap-4">
-                  {/* GOOGLE SHEETS LIVE CONFIGURATION */}
-                  <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col gap-2">
-                    <div>
-                      <label className="block text-[9px] font-black uppercase tracking-wider text-emerald-800 mb-1">Google Sheet URL</label>
-                      <input
-                        type="url"
-                        placeholder="https://docs.google.com/spreadsheets/d/your-id-here"
-                        value={editSheetUrl}
-                        onChange={(e) => setEditSheetUrl(e.target.value)}
-                        className="w-full text-xs font-mono font-bold p-2.5 border border-emerald-250 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
-                      />
+                <form onSubmit={handleSaveAdminStats} className="p-6 overflow-y-auto max-h-[80vh] flex flex-col gap-4 text-left">
+                  {/* DATA STREAM SEGMENT SELECTOR */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-450 mb-1.5">📡 Data Input Stream Mode</label>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setEditAdminMode(false)}
+                        className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer ${
+                          !editAdminMode
+                            ? 'bg-emerald-600 text-white shadow-xs font-black'
+                            : 'text-slate-500 hover:text-slate-800 font-bold'
+                        }`}
+                      >
+                        🔄 Auto Sheet Sync
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditAdminMode(true)}
+                        className={`py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all cursor-pointer ${
+                          editAdminMode
+                            ? 'bg-emerald-600 text-white shadow-xs font-black'
+                            : 'text-slate-500 hover:text-slate-800 font-bold'
+                        }`}
+                      >
+                        🛠️ Manual Simulator
+                      </button>
                     </div>
-                    <p className="text-[8.5px] text-slate-550 leading-normal font-bold">
-                      ⚠️ <span className="text-slate-800 font-extrabold text-[9px] uppercase">No login required</span>: Make the link sharing in Google Sheets <span className="text-emerald-700">"Anyone with the link can view" (Viewer)</span>, then paste the URL here. No API keys or Google accounts needed!
+                  </div>
+
+                  {!editAdminMode ? (
+                    /* GOOGLE SHEETS LIVE CONFIGURATION */
+                    <div className="flex flex-col gap-3">
+                      <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col gap-2">
+                        <div>
+                          <label className="block text-[9px] font-black uppercase tracking-wider text-emerald-800 mb-1">Google Sheet URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://docs.google.com/spreadsheets/d/your-id-here"
+                            value={editSheetUrl}
+                            onChange={(e) => setEditSheetUrl(e.target.value)}
+                            className="w-full text-xs font-mono font-bold p-2.5 border border-emerald-250 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <p className="text-[8.5px] text-slate-550 leading-normal font-bold">
+                          ⚠️ <span className="text-slate-800 font-extrabold text-[9px] uppercase">No login required</span>: Make the link sharing in Google Sheets <span className="text-emerald-700">"Anyone with the link can view" (Viewer)</span>, then paste the URL here. No API keys or Google accounts needed!
+                        </p>
+                      </div>
+
+                      {/* GOOGLE SHEETS WRITE-BACK AUTH */}
+                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-2">
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          💾 Write-Back Sheets Integration
+                        </label>
+                        <p className="text-[9px] text-slate-500 leading-normal">
+                          To write progress updates and visitor log sheets automatically back to <strong>'History'</strong> and <strong>'Vistors'</strong> tabs, please sign in.
+                        </p>
+                        
+                        {googleUser ? (
+                          <div className="flex items-center justify-between bg-emerald-50/50 border border-emerald-200 p-2.5 rounded-xl">
+                            <div className="flex items-center gap-2">
+                              {googleUser.photoURL ? (
+                                <img src={googleUser.photoURL} alt="Avatar" className="w-6 h-6 rounded-full" />
+                              ) : (
+                                <span className="text-sm">👤</span>
+                              )}
+                              <div className="leading-tight">
+                                <p className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{googleUser.displayName || 'Coordinator'}</p>
+                                <p className="text-[8.5px] font-mono text-slate-500 leading-none">{googleUser.email}</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleGoogleSignOut}
+                              className="text-[9px] font-black uppercase hover:text-rose-600 border border-slate-300 hover:border-rose-300 px-2.5 py-1.5 bg-white rounded-lg cursor-pointer transition-all leading-none"
+                            >
+                              Disconnect
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleGoogleSignIn}
+                            className="gsi-material-button w-full cursor-pointer hover:shadow-xs transition-shadow shadow-none"
+                            style={{ margin: 0 }}
+                          >
+                            <div className="gsi-material-button-state"></div>
+                            <div className="gsi-material-button-content-wrapper">
+                              <div className="gsi-material-button-icon">
+                                <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: "block", width: "100%", height: "100%" }}>
+                                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                                  <path fill="none" d="M0 0h48v48H0z"></path>
+                                </svg>
+                              </div>
+                              <span className="gsi-material-button-contents" style={{ fontWeight: 800 }}>Enable Sheets Write-Back</span>
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* SIMULATED MANUAL CONFIGURATION (RESTORING THE LOST COMPLETION STAGES & COUNTS) */
+                    <div className="space-y-4">
+                      {/* Walk status selector */}
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-450 mb-1.5">Trekking Status (Completion Stage)</label>
+                        <select
+                          value={editWalkStatus}
+                          onChange={(e) => setEditWalkStatus(e.target.value)}
+                          className="w-full text-xs font-bold p-2.5 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                        >
+                          <option value="Pending">⏳ Pending at Basecamp (Intro/Countdown active)</option>
+                          <option value="Start">🟢 Start / Walking in Progress</option>
+                          <option value="Finish">🏆 Finish / Hike Conquered (Completion Celebrations active)</option>
+                        </select>
+                      </div>
+
+                      {/* Landmarks quick presets */}
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                        <label className="block text-[8.5px] font-black uppercase tracking-widest text-slate-400 mb-2">📍 Instantly jump to a preset landmark:</label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={setToStart}
+                            className="p-1.5 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-[9px] font-bold text-slate-705 hover:text-emerald-700 transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                          >
+                            <span>🏡</span> Horton Start
+                          </button>
+                          <button
+                            type="button"
+                            onClick={setToPeak1}
+                            className="p-1.5 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-[9px] font-bold text-slate-705 hover:text-emerald-700 transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                          >
+                            <span>🏔️</span> Pen-y-ghent (CP1)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={setToViaduct}
+                            className="p-1.5 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-[9px] font-bold text-slate-705 hover:text-emerald-700 transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                          >
+                            <span>🚂</span> Ribblehead Viaduct
+                          </button>
+                          <button
+                            type="button"
+                            onClick={setToPeak2}
+                            className="p-1.5 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-[9px] font-bold text-slate-705 hover:text-emerald-700 transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                          >
+                            <span>⛰️</span> Whernside (CP2)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={setToPeak3}
+                            className="p-1.5 bg-white border border-slate-200 hover:border-emerald-500 rounded-lg text-[9px] font-bold text-slate-705 hover:text-emerald-700 transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                          >
+                            <span>🌋</span> Ingleborough (CP3)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={setToFinish}
+                            className="p-1.5 bg-amber-50 border border-amber-200 hover:border-amber-500 rounded-lg text-[9px] font-bold text-amber-900 hover:text-amber-950 transition-colors cursor-pointer text-left flex items-center gap-1.5"
+                          >
+                            <span>🏆</span> Walk Completed!
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Manual Stats Fields */}
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Distance (Miles)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="24"
+                            value={editMiles}
+                            onChange={(e) => setEditMiles(parseFloat(e.target.value) || 0)}
+                            className="w-full text-xs font-mono font-bold p-2.5 border border-slate-200 bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Step Count (Final Count)</label>
+                          <input
+                            type="number"
+                            step="100"
+                            min="0"
+                            value={editSteps}
+                            onChange={(e) => setEditSteps(parseInt(e.target.value, 10) || 0)}
+                            className="w-full text-xs font-mono font-bold p-2.5 border border-[#ced4da] bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Coordinates Section */}
+                      <div className="grid grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Latitude</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={editLat}
+                            onChange={(e) => setEditLat(parseFloat(e.target.value) || 0)}
+                            className="w-full text-xs font-mono font-bold p-2.5 border border-[#ced4da] bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-400 mb-1">Longitude</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={editLng}
+                            onChange={(e) => setEditLng(parseFloat(e.target.value) || 0)}
+                            className="w-full text-xs font-mono font-bold p-2.5 border border-[#ced4da] bg-white rounded-xl focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* LIVE FEED CONTROLS */}
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 mt-1 flex flex-col gap-2">
+                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      📝 Live Updates Feed Controls
+                    </label>
+                    <p className="text-[9px] text-slate-500 leading-normal">
+                      Instantly flush all published photo and text entries from the public stream. This action is irreversible.
                     </p>
+                    <button
+                      type="button"
+                      onClick={handleClearUpdatesFeed}
+                      className="w-full text-center py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 text-rose-700 font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                    >
+                      🗑️ Clear Live Updates Feed ({dbData?.updates?.length || 0} entries)
+                    </button>
                   </div>
 
                   <div className="flex gap-2.5 mt-2">

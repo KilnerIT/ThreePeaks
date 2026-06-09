@@ -72,6 +72,7 @@ interface DbState {
     startTime?: string | null;
     finishTime?: string | null;
     walkStatus?: string;
+    googleAccessToken?: string | null;
   };
   walkers: Array<{
     name: string;
@@ -112,7 +113,8 @@ const defaultDbState: DbState = {
     visitorCount: 37,
     startTime: null,
     finishTime: null,
-    walkStatus: "Pending"
+    walkStatus: "Pending",
+    googleAccessToken: null
   },
   walkers: [
     { name: "Nick", steps: 0, miles: 0.0, status: "Ready to walk", avatar: "🏃‍♂️", meters: 0 },
@@ -314,8 +316,8 @@ async function syncWithGoogleSheet() {
     const csvText = await res.text();
     const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
 
-    if (lines.length < 2) {
-      throw new Error("No rows found in your Google Sheet (missing headers or data).");
+    if (lines.length < 1) {
+      throw new Error("No headers or content found in your Google Sheet. Please add a header row such as 'Date, Distance, Steps, Status' first.");
     }
 
     // Dynamic header row detection: look for first line containing keyword anchors in top 10 rows
@@ -391,9 +393,11 @@ async function syncWithGoogleSheet() {
       const parsedMiles = extractFloat(rawDistanceValue);
       const parsedSteps = extractInt(rawStepsValue);
 
-      if (!isNaN(parsedMiles) && !isNaN(parsedSteps)) {
-        miles = parsedMiles;
-        steps = parsedSteps;
+      // Robust check: accept a row if it has distance, steps, or at least a status.
+      const hasSomeData = !isNaN(parsedMiles) || !isNaN(parsedSteps) || (statusIndex > -1 && parts[statusIndex] && parts[statusIndex].trim() !== "");
+      if (hasSomeData) {
+        miles = isNaN(parsedMiles) ? 0.0 : parsedMiles;
+        steps = isNaN(parsedSteps) ? 0 : parsedSteps;
 
         if (metersIndex > -1 && parts.length > metersIndex) {
           const rawMetersValue = parts[metersIndex];
@@ -409,8 +413,12 @@ async function syncWithGoogleSheet() {
       }
     }
 
-    if (isNaN(miles) || isNaN(steps)) {
-      throw new Error(`Failed to find valid numeric entries under mapped columns. Mapped Headers: miles => "${headers[milesIndex]}" (index ${milesIndex}), steps => "${headers[stepsIndex]}" (index ${stepsIndex}). Header Row: [${headers.join(", ")}].`);
+    // Default to zero if no data rows matched with valid numbers
+    if (isNaN(miles)) {
+      miles = 0.0;
+    }
+    if (isNaN(steps)) {
+      steps = 0;
     }
 
     // Process progress and update walk milestones
@@ -457,15 +465,10 @@ async function syncWithGoogleSheet() {
       db.stats.finishTime = null;
       db.stats.walkStatus = "Start";
     } else {
-      // Fallback
-      if (newMiles > 0) {
-        if (!db.stats.startTime) {
-          db.stats.startTime = new Date().toISOString();
-        }
-        db.stats.walkStatus = "Start";
-      } else {
-        db.stats.walkStatus = "Pending";
-      }
+      // Without "Start" status found in the sheet, the walk has not started yet.
+      db.stats.walkStatus = "Pending";
+      db.stats.startTime = null;
+      db.stats.finishTime = null;
     }
     
     const finalMeters = !isNaN(meters) ? meters : Math.round(newMiles * 1609.344);
@@ -493,7 +496,19 @@ async function syncWithGoogleSheet() {
     // Trigger milestone updates if team crosses any landmarks
     checkAndAddMilestoneUpdates(oldMiles, newMiles, progressPoint.name, { lat: progressPoint.lat, lng: progressPoint.lng });
 
+    const valuesChanged = (newMiles !== oldMiles || steps !== (db.walkers[0]?.steps || 0));
     saveDb();
+
+    if (valuesChanged) {
+      appendRowToGoogleSheet("History", [
+        new Date().toISOString(),
+        newMiles,
+        steps,
+        finalMeters,
+        db.stats.walkStatus || "Pending",
+        "Google Sheets Auto-Sync"
+      ]);
+    }
   } catch (err: any) {
     console.error("Google Sheet Sync Failed:", err);
     db.stats.lastHaFetchStatus = `Sheet Sync Error: ${err.message}`;
@@ -538,6 +553,48 @@ function checkAndAddMilestoneUpdates(oldMiles: number, newMiles: number, closest
   }
 }
 
+// Function to write back data to dynamically added sheets/tabs
+async function appendRowToGoogleSheet(sheetName: string, rowData: any[]) {
+  if (!db.stats.googleAccessToken || !db.stats.sheetUrl) {
+    console.log(`Bypassing Google Sheets append for '${sheetName}' (No access token or sheet URL configured).`);
+    return;
+  }
+
+  const sheetIdMatch = db.stats.sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!sheetIdMatch) {
+    console.warn("Could not extract spreadsheet ID from:", db.stats.sheetUrl);
+    return;
+  }
+  const spreadsheetId = sheetIdMatch[1];
+
+  try {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:A:append?valueInputOption=USER_ENTERED`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${db.stats.googleAccessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        values: [rowData]
+      })
+    });
+    
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Google Sheets appending to '${sheetName}' error response:`, errText);
+      // Clean target access token if unauthorized to prevent repeating broken cycles
+      if (res.status === 401) {
+        db.stats.googleAccessToken = null;
+        saveDb();
+      }
+    } else {
+      console.log(`Successfully appended log row to Google Sheet tab '${sheetName}'!`);
+    }
+  } catch (err) {
+    console.error(`Network or API exception appending to Google Sheets tab '${sheetName}':`, err);
+  }
+}
+
 // Periodic syncing scheduler (runs every 60 seconds)
 // Periodic syncing scheduler (runs every 60 seconds)
 setInterval(() => {
@@ -572,11 +629,21 @@ app.post("/api/heartbeat", (req, res) => {
 });
 
 app.post("/api/increment-visitors", (req, res) => {
+  const { sessionId } = req.body || {};
   if (db.stats.visitorCount === undefined) {
     db.stats.visitorCount = 37;
   }
   db.stats.visitorCount += 1;
   saveDb();
+  
+  // Append to Google Sheet "Vistors"
+  appendRowToGoogleSheet("Vistors", [
+    new Date().toISOString(),
+    db.stats.visitorCount,
+    sessionId || "Unique session",
+    req.headers["user-agent"] || "Generic User Agent"
+  ]);
+
   res.json({ success: true, visitorCount: db.stats.visitorCount });
 });
 
@@ -588,6 +655,17 @@ app.post("/api/login", (req, res) => {
   } else {
     res.status(401).json({ success: false, error: "Incorrect password. Please try again." });
   }
+});
+
+// Save Google Access Token from coordinator login
+app.post("/api/admin/save-token", (req, res) => {
+  const { accessToken } = req.body;
+  if (!accessToken) {
+    return res.status(400).json({ success: false, error: "Access token is required" });
+  }
+  db.stats.googleAccessToken = accessToken;
+  saveDb();
+  res.json({ success: true });
 });
 
 // Get overall stats
@@ -689,6 +767,16 @@ app.post("/api/update/stats", (req, res) => {
   }
 
   saveDb();
+  if (db.stats.manualMode) {
+    appendRowToGoogleSheet("History", [
+      new Date().toISOString(),
+      db.stats.manualMiles,
+      db.stats.manualSteps,
+      db.stats.manualMeters || 0,
+      db.stats.walkStatus || "Pending",
+      "Manual Coordinator Edit"
+    ]);
+  }
   res.json({ success: true, stats: db.stats, walkers: db.walkers });
 });
 
@@ -731,8 +819,10 @@ app.post("/api/update/walker", (req, res) => {
 
 // Force Sync endpoint
 app.post("/api/sync", async (req, res) => {
+  // If the user requests a sync, we automatically switch out of manual/simulated mode
   if (db.stats.manualMode) {
-    return res.status(400).json({ success: false, error: "Cannot sync in Simulated/Manual mode. Please toggle off Simulated mode first." });
+    db.stats.manualMode = false;
+    saveDb();
   }
   await syncWithGoogleSheet();
   res.json({ success: true, stats: db.stats, walkers: db.walkers });
@@ -773,6 +863,13 @@ app.post("/api/updates/delete", (req, res) => {
   } else {
     res.status(404).json({ success: false, error: "Update not found" });
   }
+});
+
+// Clear Live Updates Feed
+app.post("/api/updates/clear", (req, res) => {
+  db.updates = [];
+  saveDb();
+  res.json({ success: true, updates: db.updates });
 });
 
 
