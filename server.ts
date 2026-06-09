@@ -91,6 +91,20 @@ interface DbState {
     coordinate?: { lat: number; lng: number };
     type?: string;
   }>;
+  visitorLog?: Array<{
+    timestamp: string;
+    count: number;
+    sessionId: string;
+    userAgent: string;
+  }>;
+  historyLog?: Array<{
+    timestamp: string;
+    miles: number;
+    steps: number;
+    meters: number;
+    walkStatus: string;
+    source: string;
+  }>;
 }
 
 // Default initial state
@@ -134,7 +148,9 @@ const defaultDbState: DbState = {
       coordinate: { lat: 54.1488, lng: -2.2858 },
       type: "start"
     }
-  ]
+  ],
+  visitorLog: [],
+  historyLog: []
 };
 
 let db: DbState = { ...defaultDbState };
@@ -500,14 +516,16 @@ async function syncWithGoogleSheet() {
     saveDb();
 
     if (valuesChanged) {
-      appendRowToGoogleSheet("History", [
-        new Date().toISOString(),
-        newMiles,
-        steps,
-        finalMeters,
-        db.stats.walkStatus || "Pending",
-        "Google Sheets Auto-Sync"
-      ]);
+      if (!db.historyLog) db.historyLog = [];
+      db.historyLog.push({
+        timestamp: new Date().toISOString(),
+        miles: newMiles,
+        steps: steps,
+        meters: finalMeters,
+        walkStatus: db.stats.walkStatus || "Pending",
+        source: "Google Sheets Auto-Sync"
+      });
+      saveDb();
     }
   } catch (err: any) {
     console.error("Google Sheet Sync Failed:", err);
@@ -634,15 +652,18 @@ app.post("/api/increment-visitors", (req, res) => {
     db.stats.visitorCount = 37;
   }
   db.stats.visitorCount += 1;
-  saveDb();
   
-  // Append to Google Sheet "Vistors"
-  appendRowToGoogleSheet("Vistors", [
-    new Date().toISOString(),
-    db.stats.visitorCount,
-    sessionId || "Unique session",
-    req.headers["user-agent"] || "Generic User Agent"
-  ]);
+  if (!db.visitorLog) {
+    db.visitorLog = [];
+  }
+  db.visitorLog.push({
+    timestamp: new Date().toISOString(),
+    count: db.stats.visitorCount,
+    sessionId: sessionId || "Unique session",
+    userAgent: req.headers["user-agent"] || "Generic User Agent"
+  });
+  
+  saveDb();
 
   res.json({ success: true, visitorCount: db.stats.visitorCount });
 });
@@ -687,7 +708,25 @@ app.get("/api/data", (req, res) => {
       activeViewers: activeCount
     },
     walkers: db.walkers,
-    updates: db.updates
+    updates: db.updates,
+    historyLog: db.historyLog || [],
+    visitorLog: db.visitorLog || []
+  });
+});
+
+// Clear local visitor/history logs
+app.post("/api/admin/clear-logs", (req, res) => {
+  const { type } = req.body;
+  if (type === "history") {
+    db.historyLog = [];
+  } else if (type === "visitors") {
+    db.visitorLog = [];
+  }
+  saveDb();
+  res.json({
+    success: true,
+    historyLog: db.historyLog || [],
+    visitorLog: db.visitorLog || []
   });
 });
 
@@ -766,17 +805,18 @@ app.post("/api/update/stats", (req, res) => {
     syncWithGoogleSheet();
   }
 
-  saveDb();
   if (db.stats.manualMode) {
-    appendRowToGoogleSheet("History", [
-      new Date().toISOString(),
-      db.stats.manualMiles,
-      db.stats.manualSteps,
-      db.stats.manualMeters || 0,
-      db.stats.walkStatus || "Pending",
-      "Manual Coordinator Edit"
-    ]);
+    if (!db.historyLog) db.historyLog = [];
+    db.historyLog.push({
+      timestamp: new Date().toISOString(),
+      miles: db.stats.manualMiles,
+      steps: db.stats.manualSteps,
+      meters: db.stats.manualMeters || 0,
+      walkStatus: db.stats.walkStatus || "Pending",
+      source: "Manual Coordinator Edit"
+    });
   }
+  saveDb();
   res.json({ success: true, stats: db.stats, walkers: db.walkers });
 });
 

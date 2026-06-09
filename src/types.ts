@@ -48,9 +48,27 @@ export interface AppStats {
   googleAccessToken?: string | null;
 }
 
+export interface VisitorLogEntry {
+  timestamp: string;
+  count: number;
+  sessionId: string;
+  userAgent: string;
+}
+
+export interface HistoryLogEntry {
+  timestamp: string;
+  miles: number;
+  steps: number;
+  meters: number;
+  walkStatus: string;
+  source: string;
+}
+
 export interface DbState {
   passwordRequired: boolean;
   stats: AppStats;
   walkers: Walker[];
   updates: LiveUpdate[];
+  historyLog?: HistoryLogEntry[];
+  visitorLog?: VisitorLogEntry[];
 }

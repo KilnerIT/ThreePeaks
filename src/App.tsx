@@ -230,6 +230,7 @@ export default function App() {
   }, [showBrief]);
 
   const [adminOpen, setAdminOpen] = useState<boolean>(false);
+  const [adminSubTab, setAdminSubTab] = useState<'config' | 'logs'>('config');
   const [authorized, setAuthorized] = useState<boolean>(true);
   const [passcode, setPasscode] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -614,6 +615,23 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to clear updates feed:", err);
+    }
+  };
+
+  // Clear visitor or history logs
+  const handleClearLogs = async (type: 'visitors' | 'history') => {
+    if (!confirm(`Are you sure you want to clear the local ${type === 'history' ? 'GPS Progress History' : 'Visitor Sessions'} log?`)) return;
+    try {
+      const response = await fetch("/api/admin/clear-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type })
+      });
+      if (response.ok) {
+        await fetchData();
+      }
+    } catch (err) {
+      console.error(`Failed to clear log ${type}:`, err);
     }
   };
 
@@ -1027,14 +1045,17 @@ export default function App() {
                   {/* Footer tips and action jump triggers */}
                   <div className="mt-2 pt-3 border-t border-white/10 flex flex-col sm:flex-row justify-between items-center gap-3">
                     <p className="text-[9px] text-slate-400 font-bold max-w-sm text-left leading-normal font-sans">
-                      💡 <span className="text-slate-300 uppercase font-black text-[8px]">Hiker Tip:</span> Use the **Elevation Profile** or **2D Live Trail Map** tabs above to explore slopes and physical coordinates of the peaks course ahead of time!
+                      💡 <span className="text-slate-300 uppercase font-black text-[8px]">Hiker Tip:</span> Use the **Elevation Profile** panel below to explore slopes and checkpoints of the peaks course ahead of time!
                     </p>
                     <button
                       type="button"
-                      onClick={() => setRouteTab('map')}
+                      onClick={() => {
+                        const el = document.getElementById("trail-elevation-view");
+                        if (el) el.scrollIntoView({ behavior: "smooth" });
+                      }}
                       className="w-full sm:w-auto px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md hover:scale-[1.01] active:scale-99 duration-150 cursor-pointer shrink-0 font-sans"
                     >
-                      🗺️ Explore Interactive Map
+                      🏔️ View Elevation Profile
                     </button>
                   </div>
                 </div>
@@ -1329,42 +1350,17 @@ export default function App() {
       <div className="relative z-20 px-4 md:px-8 grid grid-cols-1 lg:grid-cols-12 gap-5 mt-4">
         {/* Left Hand: Hiker Elevation Trail Path Map (lg:col-span-8) */}
         <div className="lg:col-span-8 flex flex-col">
-          {/* TAB CONTROL WITH MODERN OUTDOOR BADGING */}
-          <div className="flex flex-wrap bg-slate-100 p-1 rounded-2xl border border-slate-200 mb-3 max-w-sm self-start shadow-xs gap-1">
-            <button
-              id="view-tab-elevation"
-              onClick={() => setRouteTab('elevation')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                routeTab === 'elevation'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              🏔️ ELEVATION PROFILE
-            </button>
-            <button
-              id="view-tab-map"
-              onClick={() => setRouteTab('map')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                routeTab === 'map'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              🗺️ 2D LIVE TRAIL MAP
-            </button>
+          {/* SECURE DYNAMIC TRAIL PATH ELEVATION VIEW */}
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-[11px] font-black text-emerald-805 uppercase tracking-widest flex items-center gap-1.5 font-sans">
+              <span>🏔️</span> LIVE TRAIL ELEVATION PROFILE
+            </h4>
           </div>
 
-          <AnimatePresence mode="wait">
-            {routeTab === 'elevation' ? (
-              <motion.section
-                key="trail-elevation-view"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -12 }}
-                transition={{ duration: 0.2 }}
-                className="relative flex-1 flex flex-col justify-end min-h-[400px] lg:h-[450px] bg-sky-200 rounded-[2rem] border-4 border-emerald-700 shadow-2xl overflow-hidden mt-0"
-              >
+          <section
+            id="trail-elevation-view"
+            className="relative flex-1 flex flex-col justify-end min-h-[400px] lg:h-[450px] bg-sky-200 rounded-[2rem] border-4 border-emerald-700 shadow-2xl overflow-hidden mt-0"
+          >
                 {/* Realistic Cartoon Sky background decoration */}
                 <div className="absolute inset-0 bg-gradient-to-b from-sky-400 to-sky-200 pointer-events-none rounded-[1.85rem] z-0" />
 
@@ -1595,9 +1591,9 @@ export default function App() {
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-center text-[10px] font-black text-emerald-950 uppercase tracking-wide z-20 pointer-events-none select-none bg-white/95 border-2 border-emerald-700 px-4 py-1.5 rounded-full shadow-lg max-w-[90%] whitespace-nowrap animate-fade-in flex items-center gap-1.5 font-sans">
                   <span className="animate-pulse">🏞️</span> Squad on Trail Update: <span className="font-mono text-emerald-850 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-250 font-black">{totalMiles.toFixed(2)} mi</span> ({progressPercent}%) • <span className="font-mono text-[#064E3B] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-250 font-black">ALT: {getAltitudeForMiles(totalMiles)}m</span>
                 </div>
-              </motion.section>
-            ) : (
-              /* REALISTIC 2D OUTLINE LOOP MAP MATCHING THE ATTACHED SCHEMATIC EXACTLY */
+              </section>
+              {false && (
+                /* REALISTIC 2D OUTLINE LOOP MAP MATCHING THE ATTACHED SCHEMATIC EXACTLY */
               <motion.section
                 key="trail-map-view"
                 initial={{ opacity: 0, y: 12 }}
@@ -2007,8 +2003,7 @@ export default function App() {
                 </div>
               </motion.section>
             )}
-          </AnimatePresence>
-        </div>
+          </div>
 
         {/* Right Hand: Messaging platform live stream feed & broadcast composer (lg:col-span-4) */}
         <div className="lg:col-span-4 flex flex-col">
@@ -2092,8 +2087,36 @@ export default function App() {
                   </button>
                 </form>
               ) : (
-                /* ACTUAL SETTINGS PANEL FORM */
-                <form onSubmit={handleSaveAdminStats} className="p-6 overflow-y-auto max-h-[80vh] flex flex-col gap-4 text-left">
+                <div className="flex flex-col flex-1 overflow-hidden min-h-[500px]">
+                  {/* ADMIN SUB-TABS SELECTOR */}
+                  <div className="flex bg-slate-100 p-1 border-b border-slate-200 justify-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setAdminSubTab('config')}
+                      className={`flex-1 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer text-center ${
+                        adminSubTab === 'config'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+                      }`}
+                    >
+                      📡 Settings & Presets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdminSubTab('logs')}
+                      className={`flex-1 py-2 rounded-xl text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer text-center ${
+                        adminSubTab === 'logs'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+                      }`}
+                    >
+                      📋 DB Activity Logs
+                    </button>
+                  </div>
+
+                  {adminSubTab === 'config' ? (
+                    /* ACTUAL SETTINGS PANEL FORM */
+                    <form onSubmit={handleSaveAdminStats} className="p-6 overflow-y-auto max-h-[70vh] flex flex-col gap-4 text-left">
                   {/* DATA STREAM SEGMENT SELECTOR */}
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-wider text-slate-450 mb-1.5">📡 Data Input Stream Mode</label>
@@ -2350,10 +2373,125 @@ export default function App() {
                     </button>
                   </div>
                 </form>
+              ) : (
+                /* DYNAMIC DETAILED DB ACTIVITY LOG DATA TABLES */
+                <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-5 text-left bg-slate-50 max-h-[70vh]">
+                  {/* HISTORY TRACKING METRICS RECORD LOG */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                      <h4 className="text-[10.5px] font-black uppercase tracking-widest text-slate-800 flex items-center gap-1.5">
+                        🛣️ GPS Progress Milestones Log
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => handleClearLogs('history')}
+                        disabled={!dbData?.historyLog || dbData.historyLog.length === 0}
+                        className="text-[9px] font-black text-rose-600 hover:bg-rose-50 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed uppercase animate-fade-in"
+                      >
+                        Clear Log
+                      </button>
+                    </div>
+                    
+                    <div className="overflow-x-auto border border-slate-150 rounded-xl max-h-[140px] overflow-y-auto">
+                      <table className="w-full text-[9.5px] text-slate-650 border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 text-stone-800 uppercase tracking-wider font-extrabold border-b border-slate-200">
+                            <th className="p-2 text-left font-mono">Time</th>
+                            <th className="p-2 text-center">Miles</th>
+                            <th className="p-2 text-right">Steps</th>
+                            <th className="p-2 text-center">Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {!dbData?.historyLog || dbData.historyLog.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="p-4 text-center font-bold text-slate-400 italic">No historical walk updates logged.</td>
+                            </tr>
+                          ) : (
+                            [...dbData.historyLog].reverse().map((log, index) => (
+                              <tr key={index} className="border-b border-stone-100 hover:bg-slate-50 duration-100 font-medium">
+                                <td className="p-2 font-mono whitespace-nowrap text-stone-500">
+                                  {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </td>
+                                <td className="p-2 text-center font-extrabold text-emerald-800">{log.miles.toFixed(2)} mi</td>
+                                <td className="p-2 text-right font-mono font-bold text-slate-800">{log.steps.toLocaleString()}</td>
+                                <td className="p-2 text-center truncate max-w-[90px] font-bold text-stone-500" title={log.source}>
+                                  {log.source || "System"}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* VISITORS ANALYTICS TRAFFIC LOG */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                      <h4 className="text-[10.5px] font-black uppercase tracking-widest text-slate-800 flex items-center gap-1.5">
+                        👥 Visitor Session Traffic Log
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => handleClearLogs('visitors')}
+                        disabled={!dbData?.visitorLog || dbData.visitorLog.length === 0}
+                        className="text-[9px] font-black text-rose-600 hover:bg-rose-50 border border-rose-200 hover:border-rose-300 px-2.5 py-1 rounded-lg cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed uppercase"
+                      >
+                        Clear Visitors
+                      </button>
+                    </div>
+                    
+                    <div className="overflow-x-auto border border-slate-150 rounded-xl max-h-[140px] overflow-y-auto">
+                      <table className="w-full text-[9.5px] text-slate-650 border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 text-stone-800 uppercase tracking-wider font-extrabold border-b border-slate-200">
+                            <th className="p-2 text-left font-mono">Time</th>
+                            <th className="p-2 text-center">Visit ID</th>
+                            <th className="p-2 text-right">User Agent</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {!dbData?.visitorLog || dbData.visitorLog.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} className="p-4 text-center font-bold text-slate-400 italic">No visitor sessions registered yet.</td>
+                            </tr>
+                          ) : (
+                            [...dbData.visitorLog].reverse().map((log, index) => (
+                              <tr key={index} className="border-b border-stone-100 hover:bg-slate-50 duration-100 font-medium">
+                                <td className="p-2 font-mono whitespace-nowrap text-stone-500">
+                                  {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </td>
+                                <td className="p-2 text-center font-semibold text-emerald-800 truncate max-w-[80px]" title={log.sessionId}>
+                                  {log.sessionId === "Unique session" ? "Inc. Session" : log.sessionId.slice(-6)}
+                                </td>
+                                <td className="p-2 text-right text-stone-500 truncate max-w-[140px]" title={log.userAgent}>
+                                  {log.userAgent}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="mt-auto pt-4 border-t border-slate-200 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAuthorized(false)}
+                      className="w-full py-2.5 text-xs font-black uppercase tracking-wide border border-rose-300 hover:bg-rose-50 text-rose-700 bg-white rounded-xl transition-all active:scale-95 cursor-pointer"
+                    >
+                      Lock Admin
+                    </button>
+                  </div>
+                </div>
               )}
-            </motion.div>
-          </div>
-        )}
+            </div>
+          )}
+          </motion.div>
+        </div>
+      )}
       </AnimatePresence>
     </div>
   );
